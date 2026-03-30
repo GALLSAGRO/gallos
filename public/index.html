@@ -27,8 +27,15 @@
       <button onclick="backToRooms()" class="btn-back">Volver a salas</button>
 
       <div class="room-layout">
-        <div class="stream-box">
-          <iframe id="liveFrame" src="" allowfullscreen></iframe>
+        <div class="stream-col">
+          <div class="stream-box">
+            <iframe id="liveFrame" src="" allowfullscreen></iframe>
+          </div>
+
+          <section class="historial-section">
+            <h3>Historial del evento</h3>
+            <div id="historialList"></div>
+          </section>
         </div>
 
         <div class="fight-panel">
@@ -56,13 +63,13 @@
 
             <div id="resultBanner" style="display:none" class="result-banner"></div>
           </div>
+
+          <section class="my-bets">
+            <h3>Mis apuestas</h3>
+            <div id="myBetsList"></div>
+          </section>
         </div>
       </div>
-
-      <section class="my-bets">
-        <h3>Mis apuestas</h3>
-        <div id="myBetsList"></div>
-      </section>
     </section>
   </main>
 

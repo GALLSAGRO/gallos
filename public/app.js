@@ -2,10 +2,10 @@ const token = localStorage.getItem('token');
 if (!token) window.location.href = '/login.html';
 
 let user = JSON.parse(localStorage.getItem('user') || '{}');
-let currentRoom  = null;
-let currentFight = null;
+let currentRoom   = null;
+let currentFight  = null;
 let selectedGallo = null;
-let socket = null;
+let socket        = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
   await refreshMe();
@@ -26,8 +26,8 @@ async function refreshMe() {
   const data = await api('/api/me');
   user = data;
   localStorage.setItem('user', JSON.stringify(user));
-  document.getElementById('navUser').textContent    = user.username;
-  document.getElementById('navPuntos').textContent  = user.puntos + ' pts';
+  document.getElementById('navUser').textContent   = user.username;
+  document.getElementById('navPuntos').textContent = user.puntos + ' pts';
   if (user.is_admin) document.getElementById('adminLink').style.display = 'inline-block';
 }
 
@@ -57,7 +57,9 @@ function backToRooms() {
   currentRoom = null; currentFight = null; selectedGallo = null;
   document.getElementById('roomSelector').style.display = 'block';
   document.getElementById('roomView').style.display     = 'none';
-  document.getElementById('liveFrame').src = '';
+  document.getElementById('liveFrame').src              = '';
+  document.getElementById('historialList').innerHTML    = '';
+  document.getElementById('myBetsList').innerHTML       = '';
 }
 
 // ── Socket ────────────────────────────────────────────────────────────────────
@@ -73,6 +75,7 @@ function connectSocket(roomSlug) {
   socket.on('fight-created', (fight) => {
     renderFight(fight);
     renderPool([]);
+    showNotificacion('Nueva pelea: ' + fight.gallo_a + ' vs ' + fight.gallo_b);
   });
 
   socket.on('fight-updated', ({ fightId, estado }) => {
@@ -80,44 +83,55 @@ function connectSocket(roomSlug) {
       currentFight.estado = estado;
       updateEstadoBadge(estado);
       document.getElementById('betForm').style.display = 'none';
+      showNotificacion('Apuestas cerradas. Pelea en vivo.');
     }
   });
 
-  socket.on('bet-placed', ({ pool: poolData }) => renderPool(poolData));
+  socket.on('bet-placed', ({ pool: poolData }) => {
+    renderPool(poolData);
+  });
 
   socket.on('fight-result', ({ fight }) => {
     currentFight = fight;
     updateEstadoBadge('terminada');
-    document.getElementById('betForm').style.display   = 'none';
-    const banner = document.getElementById('resultBanner');
+    document.getElementById('betForm').style.display  = 'none';
+    const banner     = document.getElementById('resultBanner');
     const winnerName = fight.ganador === 'A'
       ? document.getElementById('btnA').textContent
       : document.getElementById('btnB').textContent;
-    banner.textContent    = 'Ganador: ' + winnerName;
-    banner.className      = 'result-banner ' + (fight.ganador === 'A' ? 'banner-rojo' : 'banner-verde');
-    banner.style.display  = 'block';
+    banner.textContent   = 'Ganador: ' + winnerName;
+    banner.className     = 'result-banner ' + (fight.ganador === 'A' ? 'banner-rojo' : 'banner-verde');
+    banner.style.display = 'block';
     refreshMe();
     loadMyBets();
   });
+
+  socket.on('historial', (peleas) => {
+    renderHistorial(peleas);
+  });
 }
 
-// ── Render ────────────────────────────────────────────────────────────────────
+// ── Render pelea ──────────────────────────────────────────────────────────────
 function renderFight(fight) {
   currentFight = fight;
-  document.getElementById('noFight').style.display   = 'none';
-  document.getElementById('fightCard').style.display = 'block';
+  document.getElementById('noFight').style.display      = 'none';
+  document.getElementById('fightCard').style.display    = 'block';
   document.getElementById('resultBanner').style.display = 'none';
 
   document.getElementById('fightTitle').textContent = fight.gallo_a + ' vs ' + fight.gallo_b;
-  document.getElementById('btnA').textContent = fight.gallo_a;
-  document.getElementById('btnB').textContent = fight.gallo_b;
+  document.getElementById('btnA').textContent       = fight.gallo_a;
+  document.getElementById('btnB').textContent       = fight.gallo_b;
 
   updateEstadoBadge(fight.estado);
   document.getElementById('betForm').style.display = fight.estado === 'apostando' ? 'block' : 'none';
+
+  selectedGallo = null;
+  document.getElementById('btnA').classList.remove('selected');
+  document.getElementById('btnB').classList.remove('selected');
 }
 
 function updateEstadoBadge(estado) {
-  const badge = document.getElementById('estadoBadge');
+  const badge  = document.getElementById('estadoBadge');
   const labels = { apostando: 'Apostando', en_vivo: 'En Vivo', terminada: 'Terminada' };
   badge.textContent = labels[estado] || estado;
   badge.className   = 'estado-badge estado-' + estado;
@@ -126,9 +140,62 @@ function updateEstadoBadge(estado) {
 function renderPool(poolData) {
   if (!currentFight) return;
   let totalA = 0, totalB = 0;
-  poolData.forEach(p => { if (p.gallo === 'A') totalA = p.total; else totalB = p.total; });
-  document.getElementById('poolA').textContent = currentFight.gallo_a + ': ' + totalA + ' pts';
-  document.getElementById('poolB').textContent = currentFight.gallo_b + ': ' + totalB + ' pts';
+  poolData.forEach(p => {
+    if (p.gallo === 'A') totalA = Number(p.total);
+    else totalB = Number(p.total);
+  });
+  const total = totalA + totalB;
+  const pctA  = total > 0 ? Math.round((totalA / total) * 100) : 50;
+  const pctB  = 100 - pctA;
+
+  document.getElementById('poolA').textContent = currentFight.gallo_a + ': ' + totalA + ' pts (' + pctA + '%)';
+  document.getElementById('poolB').textContent = currentFight.gallo_b + ': ' + totalB + ' pts (' + pctB + '%)';
+}
+
+// ── Historial ─────────────────────────────────────────────────────────────────
+function renderHistorial(peleas) {
+  const el = document.getElementById('historialList');
+  if (!peleas.length) {
+    el.innerHTML = '<p class="no-data">Sin peleas registradas en este evento</p>';
+    return;
+  }
+
+  el.innerHTML = `
+    <table class="bets-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Rojo</th>
+          <th>Verde</th>
+          <th>Estado</th>
+          <th>Ganador</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${peleas.map((p, i) => {
+          const ganadorName = p.ganador === 'A'
+            ? `<span class="gallo-rojo">${p.gallo_a}</span>`
+            : p.ganador === 'B'
+              ? `<span class="gallo-verde">${p.gallo_b}</span>`
+              : '-';
+          const estadoClass = {
+            apostando: 'estado-apostando',
+            en_vivo:   'estado-en_vivo',
+            terminada: 'estado-terminada'
+          }[p.estado] || '';
+          return `
+            <tr>
+              <td>${peleas.length - i}</td>
+              <td class="gallo-rojo">${p.gallo_a}</td>
+              <td class="gallo-verde">${p.gallo_b}</td>
+              <td><span class="estado-badge ${estadoClass}" style="font-size:.75rem;padding:2px 10px">${p.estado}</span></td>
+              <td>${ganadorName}</td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
 }
 
 // ── Apuestas ──────────────────────────────────────────────────────────────────
@@ -154,7 +221,9 @@ async function placeBet() {
   });
 
   if (!res.ok) return showBetMsg(res.error, 'error');
-  const unmatchedMsg = res.unmatched > 0 ? ` (${res.unmatched} pts en espera de contrincante)` : '';
+  const unmatchedMsg = res.unmatched > 0
+    ? ' (' + res.unmatched + ' pts en espera de contrincante)'
+    : '';
   showBetMsg('Apuesta registrada' + unmatchedMsg, 'success');
   document.getElementById('betAmount').value = '';
   refreshMe();
@@ -164,7 +233,10 @@ async function placeBet() {
 async function loadMyBets() {
   const bets = await api('/api/bets/my');
   const el   = document.getElementById('myBetsList');
-  if (!bets.length) { el.innerHTML = '<p class="no-data">Sin apuestas registradas</p>'; return; }
+  if (!bets.length) {
+    el.innerHTML = '<p class="no-data">Sin apuestas registradas</p>';
+    return;
+  }
 
   el.innerHTML = `
     <table class="bets-table">
@@ -193,11 +265,20 @@ async function loadMyBets() {
   `;
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function showBetMsg(msg, type) {
   const el = document.getElementById('betMsg');
   el.textContent = msg;
   el.className   = 'bet-msg ' + type;
   setTimeout(() => { el.textContent = ''; }, 4000);
+}
+
+function showNotificacion(msg) {
+  const el = document.createElement('div');
+  el.className   = 'notificacion';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 4000);
 }
 
 function logout() {

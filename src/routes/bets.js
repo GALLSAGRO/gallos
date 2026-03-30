@@ -97,6 +97,19 @@ router.post('/', auth, async (req, res) => {
   });
 
   if (!result.ok) return res.status(400).json({ error: result.error });
+
+  // Emitir pool actualizado a toda la sala
+  const poolQ = await pool.query(
+    `SELECT gallo, SUM(puntos_total) AS total, SUM(puntos_matched) AS matched
+     FROM apuestas WHERE pelea_id=$1 GROUP BY gallo`,
+    [pelea_id]
+  );
+  const roomQ = await pool.query('SELECT slug FROM rooms WHERE id=$1', [room_id]);
+  const sockets = req.app.get('sockets');
+  if (sockets && roomQ.rows[0]) {
+    sockets.emitBetPlaced(roomQ.rows[0].slug, { pool: poolQ.rows });
+  }
+
   res.json({ ok: true, bet: result.bet, unmatched: result.unmatched });
 });
 

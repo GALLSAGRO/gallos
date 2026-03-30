@@ -23,6 +23,7 @@ module.exports = function setupSockets(io) {
          ORDER BY p.created_at DESC LIMIT 1`,
         [roomSlug]
       );
+
       if (q.rows[0]) {
         const fight = q.rows[0];
         const poolQ = await pool.query(
@@ -32,6 +33,15 @@ module.exports = function setupSockets(io) {
         );
         socket.emit('room-state', { fight, pool: poolQ.rows });
       }
+
+      const histQ = await pool.query(
+        `SELECT p.* FROM peleas p
+         JOIN rooms r ON r.id = p.room_id
+         WHERE r.slug=$1
+         ORDER BY p.created_at DESC`,
+        [roomSlug]
+      );
+      socket.emit('historial', histQ.rows);
     });
   });
 
@@ -47,6 +57,9 @@ module.exports = function setupSockets(io) {
     },
     emitBetPlaced(roomSlug, data) {
       io.to(`room:${roomSlug}`).emit('bet-placed', data);
+    },
+    emitHistorial(roomSlug, peleas) {
+      io.to(`room:${roomSlug}`).emit('historial', peleas);
     }
   };
 };

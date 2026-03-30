@@ -27,7 +27,20 @@ router.post('/fights', auth, adminOnly, async (req, res) => {
     "INSERT INTO peleas (room_id, gallo_a, gallo_b, estado) VALUES ($1,$2,$3,'apostando') RETURNING *",
     [room_id, gallo_a, gallo_b]
   );
-  res.json({ ok: true, fight: q.rows[0] });
+  const fight = q.rows[0];
+
+  const roomQ = await pool.query('SELECT slug FROM rooms WHERE id=$1', [room_id]);
+  const sockets = req.app.get('sockets');
+  if (sockets && roomQ.rows[0]) {
+    sockets.emitFightCreated(roomQ.rows[0].slug, fight);
+
+    const historial = await pool.query(
+      'SELECT * FROM peleas WHERE room_id=$1 ORDER BY created_at DESC', [room_id]
+    );
+    sockets.emitHistorial(roomQ.rows[0].slug, historial.rows);
+  }
+
+  res.json({ ok: true, fight });
 });
 
 router.post('/fights/:id/close-bets', auth, adminOnly, async (req, res) => {
@@ -102,6 +115,11 @@ router.post('/fights/:id/winner', auth, adminOnly, async (req, res) => {
   const sockets = req.app.get('sockets');
   if (sockets && roomQ.rows[0]) {
     sockets.emitFightResult(roomQ.rows[0].slug, { fight: fightData.rows[0] });
+
+    const historial = await pool.query(
+      'SELECT * FROM peleas WHERE room_id=$1 ORDER BY created_at DESC', [fightQ.rows[0].room_id]
+    );
+    sockets.emitHistorial(roomQ.rows[0].slug, historial.rows);
   }
 
   res.json({ ok: true, matchesSettled: matches.rows.length });
