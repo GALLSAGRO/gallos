@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>GallosBet</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+  <nav class="navbar">
+    <span class="logo">GallosBet</span>
+    <div class="nav-right">
+      <span id="navUser"></span>
+      <span id="navPuntos" class="puntos-badge"></span>
+      <a id="adminLink" href="/admin.html" class="btn-sm" style="display:none">Admin</a>
+      <button onclick="logout()" class="btn-sm">Salir</button>
+    </div>
+  </nav>
+
+  <main>
+    <section id="roomSelector">
+      <h2>Selecciona un Palenque</h2>
+      <div id="roomList" class="room-grid"></div>
+    </section>
+
+    <section id="roomView" style="display:none">
+      <button onclick="backToRooms()" class="btn-back">Volver a salas</button>
+
+      <div class="room-layout">
+        <div class="stream-box">
+          <iframe id="liveFrame" src="" allowfullscreen></iframe>
+        </div>
+
+        <div class="fight-panel">
+          <div id="noFight" class="no-fight">Sin pelea activa en este momento</div>
+
+          <div id="fightCard" style="display:none">
+            <h3 id="fightTitle"></h3>
+            <div id="estadoBadge" class="estado-badge"></div>
+
+            <div class="pool-bar">
+              <div class="pool-a" id="poolA">A: 0 pts</div>
+              <div class="pool-b" id="poolB">B: 0 pts</div>
+            </div>
+
+            <div id="betForm" style="display:none">
+              <p class="label">Apostar por:</p>
+              <div class="gallo-btns">
+                <button class="btn-gallo-a" onclick="selectGallo('A')" id="btnA"></button>
+                <button class="btn-gallo-b" onclick="selectGallo('B')" id="btnB"></button>
+              </div>
+              <input type="number" id="betAmount" placeholder="Puntos a apostar" min="1"/>
+              <button class="btn-primary" onclick="placeBet()">Apostar</button>
+              <p id="betMsg" class="bet-msg"></p>
+            </div>
+
+            <div id="resultBanner" style="display:none" class="result-banner"></div>
+          </div>
+        </div>
+      </div>
+
+      <section class="my-bets">
+        <h3>Mis apuestas</h3>
+        <div id="myBetsList"></div>
+      </section>
+    </section>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

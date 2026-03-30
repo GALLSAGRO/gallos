@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>GallosBet - Acceso</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body class="auth-page">
+  <div class="auth-card">
+    <h1>GallosBet</h1>
+
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('login')">Iniciar Sesion</button>
+      <button class="tab" onclick="switchTab('register')">Registrarse</button>
+    </div>
+
+    <form id="loginForm" onsubmit="handleLogin(event)">
+      <input type="text" id="identifier" placeholder="Usuario, email o celular" required/>
+      <input type="password" id="password" placeholder="Contrasena" required/>
+      <button type="submit" class="btn-primary">Entrar</button>
+      <p id="loginError" class="error-msg"></p>
+    </form>
+
+    <form id="registerForm" style="display:none" onsubmit="handleRegister(event)">
+      <input type="text" id="reg_nombre" placeholder="Nombre completo" required/>
+      <input type="text" id="reg_celular" placeholder="Numero celular" required/>
+      <input type="text" id="reg_username" placeholder="Username" required/>
+      <input type="email" id="reg_email" placeholder="Email" required/>
+      <input type="password" id="reg_password" placeholder="Contrasena" required/>
+      <button type="submit" class="btn-primary">Crear cuenta</button>
+      <p id="registerError" class="error-msg"></p>
+    </form>
+  </div>
+
+  <script>
+    function switchTab(tab) {
+      document.getElementById('loginForm').style.display    = tab === 'login'    ? 'flex' : 'none';
+      document.getElementById('registerForm').style.display = tab === 'register' ? 'flex' : 'none';
+      document.querySelectorAll('.tab').forEach((t, i) =>
+        t.classList.toggle('active', (tab === 'login' && i === 0) || (tab === 'register' && i === 1))
+      );
+    }
+
+    async function handleLogin(e) {
+      e.preventDefault();
+      const r = await fetch('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: identifier.value, password: password.value })
+      });
+      const data = await r.json();
+      if (!r.ok) return (loginError.textContent = data.error);
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      window.location.href = '/';
+    }
+
+    async function handleRegister(e) {
+      e.preventDefault();
+      const r = await fetch('/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nombre_completo: reg_nombre.value,
+          numero_celular:  reg_celular.value,
+          username:        reg_username.value,
+          email:           reg_email.value,
+          password:        reg_password.value
+        })
+      });
+      const data = await r.json();
+      if (!r.ok) return (registerError.textContent = data.error);
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      window.location.href = '/';
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Admin - GallosBet</title>
+  <link rel="stylesheet" href="style.css"/>
+  <style>
+    .admin-wrap  { max-width: 1100px; margin: 24px auto; padding: 0 20px; }
+    .admin-grid  { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .card        { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 22px; }
+    .card h3     { color: var(--rojo); margin-bottom: 16px; font-size: 1rem; text-transform: uppercase; letter-spacing: .5px; }
+    .full-width  { grid-column: span 2; }
+    select       { width: 100%; padding: 10px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); margin-bottom: 10px; }
+    .active-fight-info { background: var(--surface2); border-radius: 8px; padding: 12px; margin-bottom: 14px; font-size: .95rem; color: var(--text); }
+    .active-fight-info span { font-weight: 700; }
+    .winner-row  { display: flex; gap: 10px; margin-top: 10px; }
+    .btn-win-a   { flex: 1; padding: 12px; border: none; border-radius: 8px; background: var(--rojo); color: #fff; font-weight: 700; cursor: pointer; font-size: .95rem; }
+    .btn-win-b   { flex: 1; padding: 12px; border: none; border-radius: 8px; background: var(--verde); color: #fff; font-weight: 700; cursor: pointer; font-size: .95rem; }
+    .btn-win-a:hover { background: #a93226; }
+    .btn-win-b:hover { background: #1e8449; }
+    .btn-close   { width: 100%; padding: 11px; border: 1px solid var(--rojo); border-radius: 8px; background: transparent; color: var(--rojo); font-weight: 600; cursor: pointer; margin-bottom: 10px; }
+    .btn-close:hover { background: var(--rojo-clr); }
+    table        { width: 100%; border-collapse: collapse; font-size: .85rem; }
+    th, td       { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; }
+    th           { color: var(--muted); font-weight: 600; background: var(--surface2); }
+    .badge       { padding: 3px 10px; border-radius: 12px; font-size: .78rem; font-weight: 600; }
+    .badge-pending  { background: rgba(243,156,18,.2); color: #f39c18; }
+    .badge-approved { background: var(--verde-clr); color: var(--verde); }
+    .badge-rejected { background: var(--rojo-clr); color: var(--rojo); }
+    .action-btns { display: flex; gap: 6px; }
+    .btn-ok  { background: var(--verde); border: none; color: #fff; padding: 5px 12px; border-radius: 5px; cursor: pointer; font-size: .82rem; }
+    .btn-no  { background: var(--rojo);  border: none; color: #fff; padding: 5px 12px; border-radius: 5px; cursor: pointer; font-size: .82rem; }
+    @media (max-width: 700px) { .admin-grid { grid-template-columns: 1fr; } .full-width { grid-column: span 1; } }
+  </style>
+</head>
+<body>
+  <nav class="navbar">
+    <span class="logo">GallosBet Admin</span>
+    <div class="nav-right">
+      <a href="/" class="btn-sm">Volver al lobby</a>
+      <button onclick="logout()" class="btn-sm">Salir</button>
+    </div>
+  </nav>
+
+  <div class="admin-wrap">
+    <div class="admin-grid">
+
+      <!-- Nueva pelea -->
+      <div class="card">
+        <h3>Nueva Pelea</h3>
+        <select id="fightRoom"></select>
+        <input type="text" id="galloA" placeholder="Nombre Gallo A (rojo)"/>
+        <input type="text" id="galloB" placeholder="Nombre Gallo B (verde)"/>
+        <button class="btn-primary" onclick="createFight()">Crear pelea</button>
+        <p id="fightMsg" class="bet-msg"></p>
+      </div>
+
+      <!-- Control de pelea -->
+      <div class="card">
+        <h3>Controlar Pelea</h3>
+        <select id="controlRoom" onchange="loadActiveFight()"></select>
+        <div class="active-fight-info" id="activeFightInfo">Sin pelea activa</div>
+        <button class="btn-close" id="closeBetsBtn" onclick="closeBets()" style="display:none">Cerrar apuestas</button>
+        <div id="winnerButtons" style="display:none">
+          <p style="font-size:.85rem; color:var(--muted); margin-bottom:8px">Declarar ganador:</p>
+          <div class="winner-row">
+            <button class="btn-win-a" id="winA" onclick="declareWinner('A')">Gallo A</button>
+            <button class="btn-win-b" id="winB" onclick="declareWinner('B')">Gallo B</button>
+          </div>
+        </div>
+        <p id="controlMsg" class="bet-msg"></p>
+      </div>
+
+      <!-- Agregar puntos -->
+      <div class="card">
+        <h3>Agregar Puntos</h3>
+        <input type="text" id="apUsername" placeholder="Username del usuario"/>
+        <input type="number" id="apPuntos" placeholder="Cantidad de puntos"/>
+        <button class="btn-primary" onclick="addPoints()">Agregar</button>
+        <p id="apMsg" class="bet-msg"></p>
+      </div>
+
+      <!-- Usuarios -->
+      <div class="card">
+        <h3>Usuarios</h3>
+        <div id="usersList" style="max-height:260px; overflow-y:auto"></div>
+      </div>
+
+      <!-- Retiros -->
+      <div class="card full-width">
+        <h3>Solicitudes de Retiro</h3>
+        <div id="withdrawalsList"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const token = localStorage.getItem('token');
+    if (!token) window.location.href = '/login.html';
+
+    async function api(url, opts = {}) {
+      opts.headers = { ...(opts.headers || {}), Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+      const r = await fetch(url, opts);
+      return r.json();
+    }
+
+    let activeFightId    = null;
+    let activeFightState = null;
+
+    async function loadRooms() {
+      const rooms = await api('/api/rooms');
+      ['fightRoom', 'controlRoom'].forEach(id => {
+        document.getElementById(id).innerHTML = rooms.map(r =>
+          `<option value="${r.id}" data-slug="${r.slug}">${r.nombre}</option>`
+        ).join('');
+      });
+      loadActiveFight();
+    }
+
+    async function loadActiveFight() {
+      const sel  = document.getElementById('controlRoom');
+      const slug = sel.options[sel.selectedIndex]?.dataset.slug;
+      if (!slug) return;
+      const data  = await api(`/api/rooms/${slug}`);
+      const fight = data.activeFight;
+      const info  = document.getElementById('activeFightInfo');
+      const closeBtn = document.getElementById('closeBetsBtn');
+      const winBtns  = document.getElementById('winnerButtons');
+
+      if (!fight) {
+        info.innerHTML = 'Sin pelea activa';
+        closeBtn.style.display = 'none';
+        winBtns.style.display  = 'none';
+        activeFightId = null;
+        return;
+      }
+
+      activeFightId    = fight.id;
+      activeFightState = fight.estado;
+
+      info.innerHTML = `
+        <span style="color:var(--rojo)">${fight.gallo_a}</span>
+        vs
+        <span style="color:var(--verde)">${fight.gallo_b}</span>
+        &mdash; ${fight.estado}
+      `;
+
+      document.getElementById('winA').textContent = fight.gallo_a;
+      document.getElementById('winB').textContent = fight.gallo_b;
+
+      closeBtn.style.display = fight.estado === 'apostando' ? 'block' : 'none';
+      winBtns.style.display  = fight.estado === 'en_vivo'   ? 'block' : 'none';
+    }
+
+    async function createFight() {
+      const room_id = document.getElementById('fightRoom').value;
+      const gallo_a = document.getElementById('galloA').value.trim();
+      const gallo_b = document.getElementById('galloB').value.trim();
+      const res = await api('/api/admin/fights', {
+        method: 'POST', body: JSON.stringify({ room_id, gallo_a, gallo_b })
+      });
+      const el = document.getElementById('fightMsg');
+      if (!res.ok) { el.textContent = res.error; el.className = 'bet-msg error'; }
+      else         { el.textContent = 'Pelea creada correctamente'; el.className = 'bet-msg success'; loadActiveFight(); }
+      setTimeout(() => el.textContent = '', 4000);
+    }
+
+    async function closeBets() {
+      if (!activeFightId) return;
+      const res = await api(`/api/admin/fights/${activeFightId}/close-bets`, { method: 'POST' });
+      const el  = document.getElementById('controlMsg');
+      el.textContent = res.ok ? 'Apuestas cerradas. Pelea en vivo.' : res.error;
+      el.className   = res.ok ? 'bet-msg success' : 'bet-msg error';
+      if (res.ok) loadActiveFight();
+    }
+
+    async function declareWinner(ganador) {
+      if (!activeFightId) return;
+      const res = await api(`/api/admin/fights/${activeFightId}/winner`, {
+        method: 'POST', body: JSON.stringify({ ganador })
+      });
+      const el  = document.getElementById('controlMsg');
+      const name = ganador === 'A'
+        ? document.getElementById('winA').textContent
+        : document.getElementById('winB').textContent;
+      el.textContent = res.ok ? `Ganador declarado: ${name}` : res.error;
+      el.className   = res.ok ? 'bet-msg success' : 'bet-msg error';
+      if (res.ok) loadActiveFight();
+    }
+
+    async function addPoints() {
+      const username = document.getElementById('apUsername').value.trim();
+      const puntos   = document.getElementById('apPuntos').value;
+      const res = await api('/api/admin/add-points', {
+        method: 'POST', body: JSON.stringify({ username, puntos })
+      });
+      const el = document.getElementById('apMsg');
+      if (!res.ok) { el.textContent = res.error; el.className = 'bet-msg error'; }
+      else         { el.textContent = `${res.user.username} ahora tiene ${res.user.puntos} pts`; el.className = 'bet-msg success'; }
+      setTimeout(() => el.textContent = '', 4000);
+    }
+
+    async function loadWithdrawals() {
+      const list = await api('/api/admin/withdrawals');
+      const el   = document.getElementById('withdrawalsList');
+      if (!list.length) { el.innerHTML = '<p style="color:var(--muted); font-size:.9rem">Sin solicitudes pendientes</p>'; return; }
+      el.innerHTML = `
+        <table>
+          <thead><tr><th>Usuario</th><th>Celular</th><th>Puntos</th><th>Destino</th><th>Estado</th><th>Accion</th></tr></thead>
+          <tbody>
+            ${list.map(w => `
+              <tr>
+                <td>${w.nombre_completo} <span style="color:var(--muted)">@${w.username}</span></td>
+                <td>${w.numero_celular}</td>
+                <td><strong>${w.amount}</strong></td>
+                <td>${w.destination || '-'}</td>
+                <td><span class="badge badge-${w.status}">${w.status}</span></td>
+                <td>
+                  ${w.status === 'pending' ? `
+                    <div class="action-btns">
+                      <button class="btn-ok" onclick="approveW(${w.id})">Aprobar</button>
+                      <button class="btn-no" onclick="rejectW(${w.id})">Rechazar</button>
+                    </div>` : '-'}
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    async function loadUsers() {
+      const users = await api('/api/admin/users');
+      const el    = document.getElementById('usersList');
+      el.innerHTML = `
+        <table>
+          <thead><tr><th>Username</th><th>Puntos</th><th>Admin</th></tr></thead>
+          <tbody>
+            ${users.map(u => `
+              <tr>
+                <td>${u.username}</td>
+                <td>${u.puntos}</td>
+                <td>${u.is_admin ? 'Si' : 'No'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    async function approveW(id) {
+      await api(`/api/admin/withdrawals/${id}/approve`, { method: 'POST' });
+      loadWithdrawals();
+    }
+
+    async function rejectW(id) {
+      const note = prompt('Motivo del rechazo (opcional):') || '';
+      await api(`/api/admin/withdrawals/${id}/reject`, {
+        method: 'POST', body: JSON.stringify({ note })
+      });
+      loadWithdrawals();
+    }
+
+    function logout() { localStorage.clear(); window.location.href = '/login.html'; }
+
+    loadRooms();
+    loadWithdrawals();
+    loadUsers();
+    setInterval(loadWithdrawals, 15000);
+    setInterval(loadActiveFight, 5000);
+  </script>
+</body>
+</html>

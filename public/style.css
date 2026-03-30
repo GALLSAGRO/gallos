@@ -1,0 +1,157 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --rojo:     #c0392b;
+  --rojo-clr: rgba(192,57,43,.18);
+  --verde:    #27ae60;
+  --verde-clr: rgba(39,174,96,.18);
+  --bg:       #0f0f0f;
+  --surface:  #1a1a1a;
+  --surface2: #242424;
+  --border:   #2e2e2e;
+  --text:     #e8e8e8;
+  --muted:    #888;
+}
+
+body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+/* Navbar */
+.navbar {
+  display: flex; justify-content: space-between; align-items: center;
+  background: var(--surface); padding: 12px 24px;
+  border-bottom: 2px solid var(--rojo);
+  position: sticky; top: 0; z-index: 100;
+}
+.logo { font-size: 1.3rem; font-weight: 700; color: var(--rojo); letter-spacing: 1px; }
+.nav-right { display: flex; gap: 12px; align-items: center; }
+.puntos-badge {
+  background: var(--verde); color: #fff;
+  padding: 4px 12px; border-radius: 20px; font-weight: 600; font-size: .9rem;
+}
+.btn-sm {
+  background: var(--surface2); color: var(--text);
+  border: 1px solid var(--border); padding: 6px 14px;
+  border-radius: 6px; cursor: pointer; font-size: .85rem; text-decoration: none;
+}
+.btn-sm:hover { border-color: var(--rojo); color: var(--rojo); }
+
+/* Auth */
+.auth-page { display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+.auth-card {
+  background: var(--surface); padding: 36px;
+  border-radius: 14px; width: 100%; max-width: 420px;
+  border: 1px solid var(--border);
+  box-shadow: 0 0 40px rgba(192,57,43,.2);
+}
+.auth-card h1 { text-align: center; color: var(--rojo); margin-bottom: 24px; font-size: 1.8rem; }
+.tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+.tab {
+  flex: 1; padding: 10px; border: 1px solid var(--border);
+  border-radius: 8px; cursor: pointer; background: var(--surface2);
+  color: var(--muted); font-size: .9rem; transition: .15s;
+}
+.tab.active { background: var(--rojo); color: #fff; border-color: var(--rojo); font-weight: 600; }
+form { display: flex; flex-direction: column; gap: 12px; }
+input {
+  padding: 11px 14px; background: var(--surface2);
+  border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); font-size: .95rem;
+}
+input:focus { outline: none; border-color: var(--rojo); }
+.btn-primary {
+  background: var(--rojo); color: #fff; border: none;
+  padding: 12px; border-radius: 8px;
+  font-size: 1rem; font-weight: 600; cursor: pointer; transition: .15s;
+}
+.btn-primary:hover { background: #a93226; }
+.error-msg { color: var(--rojo); font-size: .85rem; text-align: center; min-height: 18px; }
+
+/* Main */
+main { padding: 24px; max-width: 1280px; margin: 0 auto; }
+h2 { font-size: 1.4rem; margin-bottom: 16px; }
+
+/* Rooms */
+.room-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+.room-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 28px 20px; cursor: pointer;
+  text-align: center; transition: .2s;
+}
+.room-card:hover { border-color: var(--rojo); transform: translateY(-3px); }
+.room-card h3 { color: var(--rojo); margin-bottom: 8px; font-size: 1.1rem; }
+.room-card p  { color: var(--muted); font-size: .9rem; }
+
+/* Room view */
+.btn-back {
+  background: none; border: 1px solid var(--border);
+  color: var(--text); padding: 8px 18px; border-radius: 6px;
+  cursor: pointer; margin-bottom: 18px; font-size: .9rem;
+}
+.btn-back:hover { border-color: var(--rojo); }
+.room-layout { display: grid; grid-template-columns: 1fr 360px; gap: 20px; }
+.stream-box iframe { width: 100%; aspect-ratio: 16/9; border-radius: 10px; border: none; background: #000; }
+
+/* Fight panel */
+.fight-panel { background: var(--surface); border-radius: 12px; padding: 22px; border: 1px solid var(--border); }
+.no-fight { text-align: center; color: var(--muted); padding: 50px 0; font-size: 1rem; }
+#fightTitle { font-size: 1.15rem; margin-bottom: 10px; }
+
+/* Estado badge */
+.estado-badge {
+  display: inline-block; padding: 4px 14px;
+  border-radius: 20px; font-size: .8rem; font-weight: 600; margin-bottom: 14px;
+}
+.estado-apostando { background: rgba(243,156,18,.2); color: #f39c18; border: 1px solid #f39c18; }
+.estado-en_vivo   { background: rgba(192,57,43,.2);  color: var(--rojo);  border: 1px solid var(--rojo); }
+.estado-terminada { background: rgba(39,174,96,.2);  color: var(--verde); border: 1px solid var(--verde); }
+
+/* Pool bar */
+.pool-bar { display: flex; gap: 8px; margin-bottom: 18px; }
+.pool-a, .pool-b {
+  flex: 1; padding: 10px 8px; border-radius: 8px;
+  text-align: center; font-weight: 600; font-size: .9rem;
+}
+.pool-a { background: var(--rojo-clr); border: 1px solid var(--rojo); color: #e07070; }
+.pool-b { background: var(--verde-clr); border: 1px solid var(--verde); color: #6dbb8a; }
+
+/* Gallo buttons */
+.label { font-size: .85rem; color: var(--muted); margin-bottom: 8px; }
+.gallo-btns { display: flex; gap: 10px; margin-bottom: 14px; }
+.btn-gallo-a, .btn-gallo-b {
+  flex: 1; padding: 12px 8px; border-radius: 8px;
+  font-size: .95rem; font-weight: 600; cursor: pointer; transition: .15s;
+  border: 2px solid transparent;
+}
+.btn-gallo-a { background: var(--rojo-clr); color: #e07070; border-color: var(--rojo); }
+.btn-gallo-b { background: var(--verde-clr); color: #6dbb8a; border-color: var(--verde); }
+.btn-gallo-a.selected { background: var(--rojo); color: #fff; }
+.btn-gallo-b.selected { background: var(--verde); color: #fff; }
+
+#betAmount { width: 100%; margin-bottom: 10px; }
+.bet-msg { margin-top: 8px; font-size: .88rem; min-height: 18px; }
+.bet-msg.success { color: var(--verde); }
+.bet-msg.error   { color: var(--rojo); }
+
+/* Result banner */
+.result-banner {
+  padding: 14px; border-radius: 8px;
+  font-size: 1.1rem; font-weight: 700; text-align: center; margin-top: 14px;
+}
+.banner-rojo  { background: var(--rojo-clr); color: var(--rojo); border: 1px solid var(--rojo); }
+.banner-verde { background: var(--verde-clr); color: var(--verde); border: 1px solid var(--verde); }
+
+/* My bets */
+.my-bets { margin-top: 30px; }
+.my-bets h3 { margin-bottom: 12px; font-size: 1.1rem; }
+.no-data { color: var(--muted); font-size: .9rem; }
+.bets-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.bets-table th, .bets-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; }
+.bets-table th { background: var(--surface2); color: var(--muted); font-weight: 600; }
+.gallo-rojo  { color: #e07070; font-weight: 600; }
+.gallo-verde { color: #6dbb8a; font-weight: 600; }
+
+/* Responsive */
+@media (max-width: 820px) {
+  .room-layout { grid-template-columns: 1fr; }
+  .fight-panel { margin-top: 0; }
+}
