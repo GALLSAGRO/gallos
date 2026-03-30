@@ -1,7 +1,7 @@
 {
-  "name": "gallos-multi-sala",
+  "name": "gallos",
   "version": "1.0.0",
-  "description": "Sistema de apuestas cruzadas multi-sala con puntos ficticios",
+  "description": "Sistema de apuestas cruzadas multi-sala con puntos",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
