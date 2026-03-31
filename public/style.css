@@ -89,25 +89,30 @@ h2 { font-size: 1.4rem; margin-bottom: 16px; }
 }
 .btn-back:hover { border-color: var(--rojo); }
 
-.room-layout { display: grid; grid-template-columns: 1fr 360px; gap: 20px; align-items: start; }
+/* Layout PC: dos columnas */
+.room-layout {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 20px;
+  align-items: start;
+}
 
-/* Columna izquierda: stream + historial */
-.stream-col { display: flex; flex-direction: column; gap: 20px; }
+/* Stream */
+.stream-col { position: sticky; top: 72px; }
 .stream-box iframe { width: 100%; aspect-ratio: 16/9; border-radius: 10px; border: none; background: #000; }
 
-/* Historial */
-.historial-section { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
-.historial-section h3 { font-size: 1rem; margin-bottom: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+/* Fight panel: columna derecha como flex vertical */
+.fight-panel { display: flex; flex-direction: column; gap: 16px; }
 
-/* Fight panel */
-.fight-panel { display: flex; flex-direction: column; gap: 20px; }
-.fight-panel > div:first-child,
-.fight-panel > div#fightCard {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 22px;
+/* Card de pelea activa */
+#fightCard {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px;
 }
 .no-fight {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 22px;
-  text-align: center; color: var(--muted); padding: 50px 20px; font-size: .95rem;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 50px 20px;
+  text-align: center; color: var(--muted); font-size: .95rem;
 }
 #fightTitle { font-size: 1.1rem; margin-bottom: 10px; }
 
@@ -155,13 +160,29 @@ h2 { font-size: 1.4rem; margin-bottom: 16px; }
 .banner-rojo  { background: var(--rojo-clr);  color: var(--rojo);  border: 1px solid var(--rojo); }
 .banner-verde { background: var(--verde-clr); color: var(--verde); border: 1px solid var(--verde); }
 
-/* My bets */
-.my-bets { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
-.my-bets h3 { font-size: 1rem; margin-bottom: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+/* Mis apuestas */
+.my-bets-section {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 18px;
+}
+.my-bets-section h3 {
+  font-size: .85rem; margin-bottom: 12px;
+  color: var(--muted); text-transform: uppercase; letter-spacing: .5px;
+}
+
+/* Historial */
+.historial-section {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 18px;
+}
+.historial-section h3 {
+  font-size: .85rem; margin-bottom: 12px;
+  color: var(--muted); text-transform: uppercase; letter-spacing: .5px;
+}
 
 /* Tables */
 .no-data { color: var(--muted); font-size: .88rem; }
-.bets-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.bets-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
 .bets-table th, .bets-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); text-align: left; }
 .bets-table th { background: var(--surface2); color: var(--muted); font-weight: 600; }
 .bets-table tr:last-child td { border-bottom: none; }
@@ -182,7 +203,12 @@ h2 { font-size: 1.4rem; margin-bottom: 16px; }
   to   { transform: translateY(0);    opacity: 1; }
 }
 
-/* Responsive */
+/* Responsive celular */
 @media (max-width: 900px) {
-  .room-layout { grid-template-columns: 1fr; }
+  .room-layout {
+    grid-template-columns: 1fr;
+  }
+  /* Stream primero, fight panel después */
+  .stream-col  { order: 1; position: static; }
+  .fight-panel { order: 2; }
 }

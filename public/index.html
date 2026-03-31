@@ -27,18 +27,17 @@
       <button onclick="backToRooms()" class="btn-back">Volver a salas</button>
 
       <div class="room-layout">
+
+        <!-- Columna izquierda: solo stream -->
         <div class="stream-col">
           <div class="stream-box">
             <iframe id="liveFrame" src="" allowfullscreen></iframe>
           </div>
-
-          <section class="historial-section">
-            <h3>Historial del evento</h3>
-            <div id="historialList"></div>
-          </section>
         </div>
 
+        <!-- Columna derecha: apuesta + mis apuestas + historial -->
         <div class="fight-panel">
+
           <div id="noFight" class="no-fight">Sin pelea activa en este momento</div>
 
           <div id="fightCard" style="display:none">
@@ -64,10 +63,18 @@
             <div id="resultBanner" style="display:none" class="result-banner"></div>
           </div>
 
-          <section class="my-bets">
+          <!-- Mis apuestas -->
+          <section class="my-bets-section">
             <h3>Mis apuestas</h3>
             <div id="myBetsList"></div>
           </section>
+
+          <!-- Historial de peleas -->
+          <section class="historial-section">
+            <h3>Historial del evento</h3>
+            <div id="historialList"></div>
+          </section>
+
         </div>
       </div>
     </section>
