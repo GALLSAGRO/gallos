@@ -183,4 +183,17 @@ router.get('/users', auth, adminOnly, async (req, res) => {
   res.json(q.rows);
 });
 
+router.put('/rooms/:id', auth, adminOnly, async (req, res) => {
+  const { nombre, facebook_live_url, activo } = req.body;
+  const q = await pool.query(
+    `UPDATE rooms
+     SET nombre=$1, facebook_live_url=$2, activo=$3
+     WHERE id=$4
+     RETURNING *`,
+    [nombre, facebook_live_url, activo, req.params.id]
+  );
+  if (!q.rows[0]) return res.status(404).json({ error: 'Sala no encontrada' });
+  res.json({ ok: true, room: q.rows[0] });
+});
+
 module.exports = router;

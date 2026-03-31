@@ -13,9 +13,31 @@
       <span id="navUser"></span>
       <span id="navPuntos" class="puntos-badge"></span>
       <a id="adminLink" href="/admin.html" class="btn-sm" style="display:none">Admin</a>
+      <button onclick="abrirRetiro()" class="btn-sm">Retirar</button>
       <button onclick="logout()" class="btn-sm">Salir</button>
     </div>
   </nav>
+
+  <!-- Modal retiro -->
+  <div class="modal-overlay" id="modalRetiro">
+    <div class="modal">
+      <h3>Solicitar Retiro</h3>
+      <label>Puntos a retirar</label>
+      <input type="number" id="retiroAmount" placeholder="Cantidad de puntos" min="1"/>
+      <label>Destino (numero de cuenta, telefono, etc.)</label>
+      <input type="text" id="retiroDestino" placeholder="Ej: CLABE, numero de celular"/>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="cerrarRetiro()">Cancelar</button>
+        <button class="btn-primary" onclick="solicitarRetiro()">Solicitar</button>
+      </div>
+      <p id="retiroMsg" class="bet-msg"></p>
+
+      <div class="retiro-historial">
+        <h4>Mis solicitudes</h4>
+        <div id="misRetirosList"></div>
+      </div>
+    </div>
+  </div>
 
   <main>
     <section id="roomSelector">

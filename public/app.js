@@ -159,17 +159,10 @@ function renderHistorial(peleas) {
     el.innerHTML = '<p class="no-data">Sin peleas registradas en este evento</p>';
     return;
   }
-
   el.innerHTML = `
     <table class="bets-table">
       <thead>
-        <tr>
-          <th>#</th>
-          <th>Rojo</th>
-          <th>Verde</th>
-          <th>Estado</th>
-          <th>Ganador</th>
-        </tr>
+        <tr><th>#</th><th>Rojo</th><th>Verde</th><th>Estado</th><th>Ganador</th></tr>
       </thead>
       <tbody>
         ${peleas.map((p, i) => {
@@ -237,13 +230,10 @@ async function loadMyBets() {
     el.innerHTML = '<p class="no-data">Sin apuestas registradas</p>';
     return;
   }
-
   el.innerHTML = `
     <table class="bets-table">
       <thead>
-        <tr>
-          <th>Sala</th><th>Pelea</th><th>Gallo</th><th>Pts</th><th>Matched</th><th>Estado</th>
-        </tr>
+        <tr><th>Sala</th><th>Pelea</th><th>Gallo</th><th>Pts</th><th>Matched</th><th>Estado</th></tr>
       </thead>
       <tbody>
         ${bets.map(b => {
@@ -257,6 +247,78 @@ async function loadMyBets() {
               <td>${b.puntos_total}</td>
               <td>${b.puntos_matched}</td>
               <td>${b.estado}</td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+// ── Retiros ───────────────────────────────────────────────────────────────────
+function abrirRetiro() {
+  document.getElementById('retiroMsg').textContent = '';
+  document.getElementById('retiroAmount').value    = '';
+  document.getElementById('retiroDestino').value   = '';
+  document.getElementById('modalRetiro').classList.add('open');
+  loadMisRetiros();
+}
+
+function cerrarRetiro() {
+  document.getElementById('modalRetiro').classList.remove('open');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('modalRetiro').addEventListener('click', function(e) {
+    if (e.target === this) cerrarRetiro();
+  });
+});
+
+async function solicitarRetiro() {
+  const amount      = parseInt(document.getElementById('retiroAmount').value);
+  const destination = document.getElementById('retiroDestino').value.trim();
+  const el          = document.getElementById('retiroMsg');
+
+  if (!amount || amount <= 0) { el.textContent = 'Ingresa un monto valido'; el.className = 'bet-msg error'; return; }
+  if (!destination)           { el.textContent = 'Ingresa el destino';      el.className = 'bet-msg error'; return; }
+
+  const res = await api('/api/withdrawals', {
+    method: 'POST',
+    body: JSON.stringify({ amount, destination })
+  });
+
+  if (!res.ok) { el.textContent = res.error; el.className = 'bet-msg error'; return; }
+
+  el.textContent = 'Solicitud enviada. El admin la procesara pronto.';
+  el.className   = 'bet-msg success';
+  document.getElementById('retiroAmount').value  = '';
+  document.getElementById('retiroDestino').value = '';
+  refreshMe();
+  loadMisRetiros();
+}
+
+async function loadMisRetiros() {
+  const list = await api('/api/withdrawals/my');
+  const el   = document.getElementById('misRetirosList');
+  if (!list.length) {
+    el.innerHTML = '<p class="no-data">Sin solicitudes anteriores</p>';
+    return;
+  }
+  el.innerHTML = `
+    <table class="bets-table">
+      <thead>
+        <tr><th>Puntos</th><th>Destino</th><th>Estado</th><th>Fecha</th></tr>
+      </thead>
+      <tbody>
+        ${list.map(w => {
+          const fecha = new Date(w.created_at).toLocaleDateString('es-MX', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+          const estadoColor = { pending: '#f39c18', approved: '#27ae60', rejected: '#c0392b' }[w.status] || '#888';
+          return `
+            <tr>
+              <td><strong>${w.amount}</strong></td>
+              <td style="max-width:120px; word-break:break-all; font-size:.8rem">${w.destination || '-'}</td>
+              <td><span style="color:${estadoColor}; font-weight:600">${w.status}</span></td>
+              <td style="font-size:.8rem; color:var(--muted)">${fecha}</td>
             </tr>
           `;
         }).join('')}

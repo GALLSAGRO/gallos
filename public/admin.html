@@ -9,11 +9,10 @@
     .admin-wrap  { max-width: 1100px; margin: 24px auto; padding: 0 20px; }
     .admin-grid  { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
     .card        { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 22px; }
-    .card h3     { color: var(--rojo); margin-bottom: 16px; font-size: 1rem; text-transform: uppercase; letter-spacing: .5px; }
+    .card h3     { color: var(--rojo); margin-bottom: 16px; font-size: .85rem; text-transform: uppercase; letter-spacing: .5px; }
     .full-width  { grid-column: span 2; }
     select       { width: 100%; padding: 10px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); margin-bottom: 10px; }
-    .active-fight-info { background: var(--surface2); border-radius: 8px; padding: 12px; margin-bottom: 14px; font-size: .95rem; color: var(--text); }
-    .active-fight-info span { font-weight: 700; }
+    .active-fight-info { background: var(--surface2); border-radius: 8px; padding: 12px; margin-bottom: 14px; font-size: .95rem; }
     .winner-row  { display: flex; gap: 10px; margin-top: 10px; }
     .btn-win-a   { flex: 1; padding: 12px; border: none; border-radius: 8px; background: var(--rojo); color: #fff; font-weight: 700; cursor: pointer; font-size: .95rem; }
     .btn-win-b   { flex: 1; padding: 12px; border: none; border-radius: 8px; background: var(--verde); color: #fff; font-weight: 700; cursor: pointer; font-size: .95rem; }
@@ -21,16 +20,36 @@
     .btn-win-b:hover { background: #1e8449; }
     .btn-close   { width: 100%; padding: 11px; border: 1px solid var(--rojo); border-radius: 8px; background: transparent; color: var(--rojo); font-weight: 600; cursor: pointer; margin-bottom: 10px; }
     .btn-close:hover { background: var(--rojo-clr); }
+    .btn-secondary { width: 100%; padding: 11px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--text); font-weight: 600; cursor: pointer; margin-bottom: 10px; }
+    .btn-secondary:hover { border-color: var(--verde); color: var(--verde); }
     table        { width: 100%; border-collapse: collapse; font-size: .85rem; }
     th, td       { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; }
     th           { color: var(--muted); font-weight: 600; background: var(--surface2); }
     .badge       { padding: 3px 10px; border-radius: 12px; font-size: .78rem; font-weight: 600; }
     .badge-pending  { background: rgba(243,156,18,.2); color: #f39c18; }
     .badge-approved { background: var(--verde-clr); color: var(--verde); }
-    .badge-rejected { background: var(--rojo-clr); color: var(--rojo); }
+    .badge-rejected { background: var(--rojo-clr);  color: var(--rojo); }
     .action-btns { display: flex; gap: 6px; }
     .btn-ok  { background: var(--verde); border: none; color: #fff; padding: 5px 12px; border-radius: 5px; cursor: pointer; font-size: .82rem; }
     .btn-no  { background: var(--rojo);  border: none; color: #fff; padding: 5px 12px; border-radius: 5px; cursor: pointer; font-size: .82rem; }
+    .sala-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .sala-row:last-child { border-bottom: none; }
+    .sala-info { flex: 1; }
+    .sala-info strong { display: block; font-size: .95rem; }
+    .sala-info span { font-size: .8rem; color: var(--muted); word-break: break-all; }
+    .btn-edit { background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: .82rem; white-space: nowrap; }
+    .btn-edit:hover { border-color: var(--rojo); color: var(--rojo); }
+    /* Modal */
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 200; justify-content: center; align-items: center; }
+    .modal-overlay.open { display: flex; }
+    .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 28px; width: 100%; max-width: 480px; }
+    .modal h3 { color: var(--rojo); margin-bottom: 20px; font-size: 1rem; }
+    .modal label { display: block; font-size: .82rem; color: var(--muted); margin-bottom: 4px; margin-top: 12px; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+    .modal-actions button { flex: 1; }
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; }
+    .toggle-row label { font-size: .9rem; color: var(--text); }
+    input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--verde); cursor: pointer; }
     @media (max-width: 700px) { .admin-grid { grid-template-columns: 1fr; } .full-width { grid-column: span 1; } }
   </style>
 </head>
@@ -43,8 +62,35 @@
     </div>
   </nav>
 
+  <!-- Modal editar sala -->
+  <div class="modal-overlay" id="modalSala">
+    <div class="modal">
+      <h3>Editar Sala</h3>
+      <input type="hidden" id="editSalaId"/>
+      <label>Nombre de la sala</label>
+      <input type="text" id="editNombre"/>
+      <label>URL del stream (Facebook Live, YouTube embed, etc.)</label>
+      <input type="text" id="editStreamUrl" placeholder="https://..."/>
+      <div class="toggle-row">
+        <label>Sala activa</label>
+        <input type="checkbox" id="editActivo"/>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="cerrarModal()">Cancelar</button>
+        <button class="btn-primary" onclick="guardarSala()">Guardar</button>
+      </div>
+      <p id="editSalaMsg" class="bet-msg"></p>
+    </div>
+  </div>
+
   <div class="admin-wrap">
     <div class="admin-grid">
+
+      <!-- Salas -->
+      <div class="card">
+        <h3>Salas / Streams</h3>
+        <div id="salasList"></div>
+      </div>
 
       <!-- Nueva pelea -->
       <div class="card">
@@ -63,7 +109,7 @@
         <div class="active-fight-info" id="activeFightInfo">Sin pelea activa</div>
         <button class="btn-close" id="closeBetsBtn" onclick="closeBets()" style="display:none">Cerrar apuestas</button>
         <div id="winnerButtons" style="display:none">
-          <p style="font-size:.85rem; color:var(--muted); margin-bottom:8px">Declarar ganador:</p>
+          <p style="font-size:.82rem; color:var(--muted); margin-bottom:8px">Declarar ganador:</p>
           <div class="winner-row">
             <button class="btn-win-a" id="winA" onclick="declareWinner('A')">Gallo A</button>
             <button class="btn-win-b" id="winB" onclick="declareWinner('B')">Gallo B</button>
@@ -84,7 +130,7 @@
       <!-- Usuarios -->
       <div class="card">
         <h3>Usuarios</h3>
-        <div id="usersList" style="max-height:260px; overflow-y:auto"></div>
+        <div id="usersList" style="max-height:280px; overflow-y:auto"></div>
       </div>
 
       <!-- Retiros -->
@@ -106,23 +152,83 @@
       return r.json();
     }
 
-    let activeFightId    = null;
-    let activeFightState = null;
+    let activeFightId = null;
+    let allRooms = [];
 
+    // ── Salas ────────────────────────────────────────────────────────────────
     async function loadRooms() {
-      const rooms = await api('/api/rooms');
+      allRooms = await api('/api/rooms');
+
+      // Lista de salas con boton editar
+      const el = document.getElementById('salasList');
+      el.innerHTML = allRooms.map(r => `
+        <div class="sala-row">
+          <div class="sala-info">
+            <strong>${r.nombre}</strong>
+            <span>${r.facebook_live_url || 'Sin URL de stream'}</span>
+          </div>
+          <button class="btn-edit" onclick="abrirModal(${r.id})">Editar</button>
+        </div>
+      `).join('');
+
+      // Selectores de sala en otros formularios
       ['fightRoom', 'controlRoom'].forEach(id => {
-        document.getElementById(id).innerHTML = rooms.map(r =>
+        document.getElementById(id).innerHTML = allRooms.map(r =>
           `<option value="${r.id}" data-slug="${r.slug}">${r.nombre}</option>`
         ).join('');
       });
+
       loadActiveFight();
     }
 
+    function abrirModal(roomId) {
+      const room = allRooms.find(r => r.id === roomId);
+      if (!room) return;
+      document.getElementById('editSalaId').value    = room.id;
+      document.getElementById('editNombre').value    = room.nombre;
+      document.getElementById('editStreamUrl').value = room.facebook_live_url || '';
+      document.getElementById('editActivo').checked  = room.activo;
+      document.getElementById('editSalaMsg').textContent = '';
+      document.getElementById('modalSala').classList.add('open');
+    }
+
+    function cerrarModal() {
+      document.getElementById('modalSala').classList.remove('open');
+    }
+
+    async function guardarSala() {
+      const id     = document.getElementById('editSalaId').value;
+      const nombre = document.getElementById('editNombre').value.trim();
+      const url    = document.getElementById('editStreamUrl').value.trim();
+      const activo = document.getElementById('editActivo').checked;
+
+      if (!nombre) return;
+
+      const res = await api(`/api/admin/rooms/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ nombre, facebook_live_url: url, activo })
+      });
+
+      const el = document.getElementById('editSalaMsg');
+      if (!res.ok) { el.textContent = res.error; el.className = 'bet-msg error'; }
+      else {
+        el.textContent = 'Guardado correctamente';
+        el.className   = 'bet-msg success';
+        setTimeout(() => { cerrarModal(); loadRooms(); }, 800);
+      }
+    }
+
+    // Cerrar modal al click fuera
+    document.getElementById('modalSala').addEventListener('click', function(e) {
+      if (e.target === this) cerrarModal();
+    });
+
+    // ── Peleas ────────────────────────────────────────────────────────────────
     async function loadActiveFight() {
       const sel  = document.getElementById('controlRoom');
       const slug = sel.options[sel.selectedIndex]?.dataset.slug;
       if (!slug) return;
+
       const data  = await api(`/api/rooms/${slug}`);
       const fight = data.activeFight;
       const info  = document.getElementById('activeFightInfo');
@@ -130,21 +236,19 @@
       const winBtns  = document.getElementById('winnerButtons');
 
       if (!fight) {
-        info.innerHTML = 'Sin pelea activa';
+        info.innerHTML         = 'Sin pelea activa';
         closeBtn.style.display = 'none';
         winBtns.style.display  = 'none';
-        activeFightId = null;
+        activeFightId          = null;
         return;
       }
 
-      activeFightId    = fight.id;
-      activeFightState = fight.estado;
-
+      activeFightId = fight.id;
       info.innerHTML = `
-        <span style="color:var(--rojo)">${fight.gallo_a}</span>
+        <span style="color:var(--rojo); font-weight:700">${fight.gallo_a}</span>
         vs
-        <span style="color:var(--verde)">${fight.gallo_b}</span>
-        &mdash; ${fight.estado}
+        <span style="color:var(--verde); font-weight:700">${fight.gallo_b}</span>
+        &mdash; <em>${fight.estado}</em>
       `;
 
       document.getElementById('winA').textContent = fight.gallo_a;
@@ -163,7 +267,13 @@
       });
       const el = document.getElementById('fightMsg');
       if (!res.ok) { el.textContent = res.error; el.className = 'bet-msg error'; }
-      else         { el.textContent = 'Pelea creada correctamente'; el.className = 'bet-msg success'; loadActiveFight(); }
+      else {
+        el.textContent = 'Pelea creada correctamente';
+        el.className   = 'bet-msg success';
+        document.getElementById('galloA').value = '';
+        document.getElementById('galloB').value = '';
+        loadActiveFight();
+      }
       setTimeout(() => el.textContent = '', 4000);
     }
 
@@ -178,10 +288,10 @@
 
     async function declareWinner(ganador) {
       if (!activeFightId) return;
-      const res = await api(`/api/admin/fights/${activeFightId}/winner`, {
+      const res  = await api(`/api/admin/fights/${activeFightId}/winner`, {
         method: 'POST', body: JSON.stringify({ ganador })
       });
-      const el  = document.getElementById('controlMsg');
+      const el   = document.getElementById('controlMsg');
       const name = ganador === 'A'
         ? document.getElementById('winA').textContent
         : document.getElementById('winB').textContent;
@@ -190,6 +300,7 @@
       if (res.ok) loadActiveFight();
     }
 
+    // ── Puntos ────────────────────────────────────────────────────────────────
     async function addPoints() {
       const username = document.getElementById('apUsername').value.trim();
       const puntos   = document.getElementById('apPuntos').value;
@@ -198,24 +309,36 @@
       });
       const el = document.getElementById('apMsg');
       if (!res.ok) { el.textContent = res.error; el.className = 'bet-msg error'; }
-      else         { el.textContent = `${res.user.username} ahora tiene ${res.user.puntos} pts`; el.className = 'bet-msg success'; }
+      else {
+        el.textContent = `${res.user.username} ahora tiene ${res.user.puntos} pts`;
+        el.className   = 'bet-msg success';
+        document.getElementById('apUsername').value = '';
+        document.getElementById('apPuntos').value   = '';
+        loadUsers();
+      }
       setTimeout(() => el.textContent = '', 4000);
     }
 
+    // ── Retiros ───────────────────────────────────────────────────────────────
     async function loadWithdrawals() {
       const list = await api('/api/admin/withdrawals');
       const el   = document.getElementById('withdrawalsList');
-      if (!list.length) { el.innerHTML = '<p style="color:var(--muted); font-size:.9rem">Sin solicitudes pendientes</p>'; return; }
+      if (!list.length) {
+        el.innerHTML = '<p style="color:var(--muted); font-size:.88rem">Sin solicitudes pendientes</p>';
+        return;
+      }
       el.innerHTML = `
         <table>
-          <thead><tr><th>Usuario</th><th>Celular</th><th>Puntos</th><th>Destino</th><th>Estado</th><th>Accion</th></tr></thead>
+          <thead>
+            <tr><th>Usuario</th><th>Celular</th><th>Puntos</th><th>Destino</th><th>Estado</th><th>Accion</th></tr>
+          </thead>
           <tbody>
             ${list.map(w => `
               <tr>
                 <td>${w.nombre_completo} <span style="color:var(--muted)">@${w.username}</span></td>
                 <td>${w.numero_celular}</td>
                 <td><strong>${w.amount}</strong></td>
-                <td>${w.destination || '-'}</td>
+                <td style="max-width:160px; word-break:break-all">${w.destination || '-'}</td>
                 <td><span class="badge badge-${w.status}">${w.status}</span></td>
                 <td>
                   ${w.status === 'pending' ? `
@@ -224,25 +347,6 @@
                       <button class="btn-no" onclick="rejectW(${w.id})">Rechazar</button>
                     </div>` : '-'}
                 </td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      `;
-    }
-
-    async function loadUsers() {
-      const users = await api('/api/admin/users');
-      const el    = document.getElementById('usersList');
-      el.innerHTML = `
-        <table>
-          <thead><tr><th>Username</th><th>Puntos</th><th>Admin</th></tr></thead>
-          <tbody>
-            ${users.map(u => `
-              <tr>
-                <td>${u.username}</td>
-                <td>${u.puntos}</td>
-                <td>${u.is_admin ? 'Si' : 'No'}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -263,8 +367,29 @@
       loadWithdrawals();
     }
 
+    // ── Usuarios ──────────────────────────────────────────────────────────────
+    async function loadUsers() {
+      const users = await api('/api/admin/users');
+      const el    = document.getElementById('usersList');
+      el.innerHTML = `
+        <table>
+          <thead><tr><th>Username</th><th>Puntos</th><th>Admin</th></tr></thead>
+          <tbody>
+            ${users.map(u => `
+              <tr>
+                <td>${u.username}</td>
+                <td>${u.puntos}</td>
+                <td>${u.is_admin ? 'Si' : 'No'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
     function logout() { localStorage.clear(); window.location.href = '/login.html'; }
 
+    // ── Init ──────────────────────────────────────────────────────────────────
     loadRooms();
     loadWithdrawals();
     loadUsers();
