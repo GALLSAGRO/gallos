@@ -47,7 +47,13 @@ async function enterRoom(slug, liveUrl) {
   currentRoom = slug;
   document.getElementById('roomSelector').style.display = 'none';
   document.getElementById('roomView').style.display     = 'block';
-  document.getElementById('liveFrame').src = liveUrl;
+
+  // Solo asignar src si es diferente para no reiniciar el video
+  const frame = document.getElementById('liveFrame');
+  if (frame.src !== liveUrl) {
+    frame.src = liveUrl;
+  }
+
   connectSocket(slug);
   await loadMyBets();
 }
@@ -57,13 +63,16 @@ function backToRooms() {
   currentRoom = null; currentFight = null; selectedGallo = null;
   document.getElementById('roomSelector').style.display = 'block';
   document.getElementById('roomView').style.display     = 'none';
-  document.getElementById('liveFrame').src              = '';
+  document.getElementById('liveFrame').src              = 'about:blank';
   document.getElementById('historialList').innerHTML    = '';
   document.getElementById('myBetsList').innerHTML       = '';
 }
 
 // ── Socket ────────────────────────────────────────────────────────────────────
 function connectSocket(roomSlug) {
+  // Desconectar socket anterior si existe
+  if (socket) socket.disconnect();
+
   socket = io({ auth: { token } });
   socket.emit('join-room', { roomSlug });
 
