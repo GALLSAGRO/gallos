@@ -1,40 +1,39 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GallosBet</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-
   <nav class="navbar">
-    <span class="logo">🐓 GallosBet</span>
+    <span class="logo">GallosBet</span>
     <div class="nav-right">
       <span id="navUser"></span>
       <span id="navPuntos" class="puntos-badge"></span>
-      <a id="adminLink" href="/panel" class="btn-sm" style="display:none">Admin</a>
+      <a id="adminLink" href="/admin" class="btn-sm" style="display:none">Admin</a>
       <button onclick="abrirRetiro()" class="btn-sm">Retirar</button>
       <button onclick="logout()" class="btn-sm">Salir</button>
     </div>
   </nav>
 
-  <!-- ── Modal retiro ── -->
   <div class="modal-overlay" id="modalRetiro">
     <div class="modal">
-      <h3>Solicitar Retiro</h3>
+      <h3>Solicitar retiro</h3>
       <label>Puntos a retirar</label>
-      <input type="number" id="retiroAmount" placeholder="Cantidad de puntos" min="1"/>
-      <label>Destino (numero de cuenta, telefono, etc.)</label>
-      <input type="text" id="retiroDestino" placeholder="Ej: CLABE, numero de celular"/>
+      <input type="number" id="retiroAmount" placeholder="Cantidad de puntos" min="1" />
+      <label>Destino</label>
+      <input type="text" id="retiroDestino" placeholder="Ej. CLABE, cuenta o teléfono" />
       <div class="modal-actions">
         <button class="btn-secondary" onclick="cerrarRetiro()">Cancelar</button>
         <button class="btn-primary" onclick="solicitarRetiro()">Solicitar</button>
       </div>
       <p id="retiroMsg" class="bet-msg"></p>
+
       <div class="retiro-historial">
         <h4>Mis solicitudes</h4>
         <div id="misRetirosList"></div>
@@ -43,32 +42,25 @@
   </div>
 
   <main>
-
-    <!-- ── LOBBY ── -->
     <section id="roomSelector">
-      <h2>Selecciona un Palenque</h2>
+      <div class="section-head">
+        <div>
+          <h1 class="page-title">Selecciona un palenque</h1>
+          <p class="page-subtitle">Elige una sala activa para entrar a la transmisión y apostar.</p>
+        </div>
+      </div>
       <div id="roomList" class="room-grid"></div>
     </section>
 
-    <!-- ── ROOM VIEW ── -->
     <section id="roomView" style="display:none">
-      <button onclick="backToRooms()" class="btn-back">← Volver a salas</button>
+      <button onclick="backToRooms()" class="btn-back">Volver a salas</button>
 
-      <div class="room-layout">
-
-        <!-- Columna izquierda: stream -->
-        <div class="stream-col">
-          <div class="stream-box">
-            <iframe id="liveFrame" src="" allowfullscreen
-              allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share">
-            </iframe>
-          </div>
-
-          <!-- Chat debajo del stream -->
-          <div class="chat-col">
-            <div class="chat-header">
-              💬 Chat en vivo
-              <span id="chatRoomName" style="color:var(--primary);margin-left:auto;font-size:.8rem"></span>
+      <div class="room-shell">
+        <aside class="left-panel">
+          <div class="panel-card panel-chat">
+            <div class="panel-head">
+              <h3>Chat en vivo</h3>
+              <span id="chatRoomName" class="panel-tag"></span>
             </div>
             <div class="chat-messages" id="chatMessages"></div>
             <div class="chat-input-row">
@@ -76,45 +68,108 @@
                 type="text"
                 class="chat-input"
                 id="chatInput"
-                placeholder="Escribe un mensaje…"
+                placeholder="Escribe un mensaje"
                 maxlength="200"
                 onkeydown="if(event.key==='Enter') sendChat()"
               />
               <button class="chat-send" onclick="sendChat()">Enviar</button>
             </div>
           </div>
-        </div>
+        </aside>
 
-        <!-- Columna derecha: apuesta + mis apuestas + historial -->
-        <div class="fight-panel">
-
-          <div id="noFight" class="no-fight">Sin pelea activa en este momento</div>
-
-          <div id="fightCard" style="display:none">
-            <h3 id="fightTitle"></h3>
-            <div id="estadoBadge" class="estado-badge"></div>
-
-            <div class="pool-bar">
-              <div class="pool-a" id="poolA">A: 0 pts</div>
-              <div class="pool-b" id="poolB">B: 0 pts</div>
+        <section class="center-panel">
+          <div class="stream-stage">
+            <div class="stream-stage-head">
+              <div>
+                <p class="eyebrow">Transmisión</p>
+                <h2 id="fightTitleStage">Sin pelea activa</h2>
+              </div>
+              <div id="estadoBadge" class="estado-badge">Sin estado</div>
             </div>
 
-            <div id="betForm" style="display:none">
-              <p class="label">Apostar por:</p>
-              <div class="gallo-btns">
-                <button class="btn-gallo-a" onclick="selectGallo('A')" id="btnA"></button>
-                <button class="btn-gallo-b" onclick="selectGallo('B')" id="btnB"></button>
+            <div class="stream-frame-wrap">
+              <iframe
+                id="liveFrame"
+                src=""
+                allowfullscreen
+                allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share">
+              </iframe>
+            </div>
+
+            <div id="noFight" class="no-fight no-fight-overlay">
+              No hay una pelea activa en este momento
+            </div>
+
+            <div id="fightCard" class="fight-stage-card" style="display:none">
+              <div class="gallos-stage">
+                <div class="gallo-stage rojo">
+                  <div class="gallo-stage-top">
+                    <span class="gallo-label">Rojo</span>
+                    <span class="gallo-name" id="btnA">—</span>
+                  </div>
+                  <div class="gallo-stage-total" id="poolA">0 pts</div>
+                </div>
+
+                <div class="stage-vs">VS</div>
+
+                <div class="gallo-stage verde">
+                  <div class="gallo-stage-top">
+                    <span class="gallo-label">Verde</span>
+                    <span class="gallo-name" id="btnB">—</span>
+                  </div>
+                  <div class="gallo-stage-total" id="poolB">0 pts</div>
+                </div>
               </div>
-              <input type="number" id="betAmount" placeholder="Puntos a apostar" min="1"/>
-              <button class="btn-primary" onclick="placeBet()">Apostar</button>
+
+              <div id="resultBanner" style="display:none" class="result-banner"></div>
+            </div>
+          </div>
+
+          <section class="panel-card historial-card">
+            <div class="panel-head">
+              <h3>Historial del evento</h3>
+            </div>
+            <div id="historialList"></div>
+          </section>
+        </section>
+
+        <aside class="right-panel">
+          <div class="panel-card bet-card">
+            <div class="panel-head">
+              <h3>Apuestas</h3>
+              <span class="saldo-mini" id="saldoMini"></span>
+            </div>
+
+            <div id="betForm" class="bet-form" style="display:none">
+              <p class="label center">Selecciona un gallo</p>
+
+              <div class="gallo-btns gallo-btns-vertical">
+                <button class="btn-gallo-a" onclick="selectGallo('A')" id="btnASelect">Rojo</button>
+                <button class="btn-gallo-b" onclick="selectGallo('B')" id="btnBSelect">Verde</button>
+              </div>
+
+              <p class="label center">Selecciona una cantidad</p>
+
+              <div class="quick-bets">
+                <button type="button" class="quick-bet-btn" onclick="setQuickAmount(100)">$100</button>
+                <button type="button" class="quick-bet-btn" onclick="setQuickAmount(500)">$500</button>
+                <button type="button" class="quick-bet-btn" onclick="setQuickAmount(1000)">$1,000</button>
+                <button type="button" class="quick-bet-btn" onclick="setQuickAmount(5000)">$5,000</button>
+                <button type="button" class="quick-bet-btn" onclick="setQuickAmount(10000)">$10,000</button>
+                <button type="button" class="quick-bet-btn" onclick="setQuickAmount(50000)">$50,000</button>
+              </div>
+
+              <input type="number" id="betAmount" placeholder="Otra cantidad" min="1" />
+              <button class="btn-primary btn-play" onclick="placeBet()">Jugar</button>
               <p id="betMsg" class="bet-msg"></p>
             </div>
 
-            <div id="resultBanner" style="display:none" class="result-banner"></div>
+            <div id="betClosed" class="bet-closed">
+              Las apuestas aparecerán aquí cuando la pelea esté en estado de apuesta.
+            </div>
           </div>
 
-          <!-- Mis apuestas con tabs -->
-          <section class="my-bets-section">
+          <section class="panel-card my-bets-section">
             <div class="bets-tabs">
               <button class="bets-tab active" onclick="switchBetsTab('activas', this)">Activas</button>
               <button class="bets-tab" onclick="switchBetsTab('historial', this)">Historial</button>
@@ -122,17 +177,9 @@
             <div id="betsActivas"></div>
             <div id="betsHistorial" style="display:none"></div>
           </section>
-
-          <!-- Historial de peleas -->
-          <section class="historial-section">
-            <h3>Historial del evento</h3>
-            <div id="historialList"></div>
-          </section>
-
-        </div>
+        </aside>
       </div>
     </section>
-
   </main>
 
   <script src="/socket.io/socket.io.js"></script>
