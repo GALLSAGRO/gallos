@@ -1,16 +1,19 @@
 const token = localStorage.getItem('token');
 if (!token) window.location.href = '/login';
 
+
 let user = JSON.parse(localStorage.getItem('user') || '{}');
 let currentRoom   = null;
 let currentFight  = null;
 let selectedGallo = null;
 let socket        = null;
 
+
 document.addEventListener('DOMContentLoaded', async () => {
   await refreshMe();
   await loadRooms();
 });
+
 
 async function api(url, opts = {}) {
   opts.headers = {
@@ -22,6 +25,7 @@ async function api(url, opts = {}) {
   return r.json();
 }
 
+
 async function refreshMe() {
   const data = await api('/api/me');
   user = data;
@@ -30,6 +34,7 @@ async function refreshMe() {
   document.getElementById('navPuntos').textContent = user.puntos + ' pts';
   if (user.is_admin) document.getElementById('adminLink').style.display = 'inline-block';
 }
+
 
 // ── Salas ─────────────────────────────────────────────────────────────────────
 async function loadRooms() {
@@ -43,20 +48,24 @@ async function loadRooms() {
   `).join('');
 }
 
+
 async function enterRoom(slug, liveUrl) {
   currentRoom = slug;
   document.getElementById('roomSelector').style.display = 'none';
   document.getElementById('roomView').style.display     = 'block';
 
-  // Solo asignar src si es diferente para no reiniciar el video
   const frame = document.getElementById('liveFrame');
-  if (frame.src !== liveUrl) {
-    frame.src = liveUrl;
-  }
+  if (frame.src !== liveUrl) frame.src = liveUrl;
+
+  // Limpiar chat al entrar a sala
+  document.getElementById('chatMessages').innerHTML = '';
+  const chatName = document.getElementById('chatRoomName');
+  if (chatName) chatName.textContent = slug;
 
   connectSocket(slug);
   await loadMyBets();
 }
+
 
 function backToRooms() {
   if (socket) socket.disconnect();
@@ -65,12 +74,12 @@ function backToRooms() {
   document.getElementById('roomView').style.display     = 'none';
   document.getElementById('liveFrame').src              = 'about:blank';
   document.getElementById('historialList').innerHTML    = '';
-  document.getElementById('myBetsList').innerHTML       = '';
+  document.getElementById('chatMessages').innerHTML     = '';
 }
+
 
 // ── Socket ────────────────────────────────────────────────────────────────────
 function connectSocket(roomSlug) {
-  // Desconectar socket anterior si existe
   if (socket) socket.disconnect();
 
   socket = io({ auth: { token } });
@@ -118,7 +127,59 @@ function connectSocket(roomSlug) {
   socket.on('historial', (peleas) => {
     renderHistorial(peleas);
   });
+
+  // ── Chat ──
+  socket.on('chat-message', ({ username, message, system }) => {
+    appendChatMsg({ username, message, system });
+  });
+
+  // ── Balance update individual ──
+  socket.on('balance-update', ({ puntos }) => {
+    user.puntos = puntos;
+    localStorage.setItem('user', JSON.stringify(user));
+    document.getElementById('navPuntos').textContent = puntos + ' pts';
+    loadMyBets();
+  });
 }
+
+
+// ── Chat ──────────────────────────────────────────────────────────────────────
+function appendChatMsg({ username, message, system }) {
+  const box = document.getElementById('chatMessages');
+  if (!box) return;
+  const div = document.createElement('div');
+  div.className = 'chat-msg' + (system ? ' system' : '');
+  if (system) {
+    div.innerHTML = `<span class="chat-text">${escapeHtml(message)}</span>`;
+  } else {
+    div.innerHTML = `<span class="chat-user">${escapeHtml(username)}:</span><span class="chat-text">${escapeHtml(message)}</span>`;
+  }
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+function sendChat() {
+  const input = document.getElementById('chatInput');
+  if (!input) return;
+  const msg = input.value.trim();
+  if (!msg || !currentRoom) return;
+  socket.emit('chat-message', {
+    roomSlug: currentRoom,
+    message:  msg,
+    username: user.username
+  });
+  input.value = '';
+}
+
+// Prevenir XSS en el chat
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 
 // ── Render pelea ──────────────────────────────────────────────────────────────
 function renderFight(fight) {
@@ -139,12 +200,14 @@ function renderFight(fight) {
   document.getElementById('btnB').classList.remove('selected');
 }
 
+
 function updateEstadoBadge(estado) {
   const badge  = document.getElementById('estadoBadge');
   const labels = { apostando: 'Apostando', en_vivo: 'En Vivo', terminada: 'Terminada' };
   badge.textContent = labels[estado] || estado;
   badge.className   = 'estado-badge estado-' + estado;
 }
+
 
 function renderPool(poolData) {
   if (!currentFight) return;
@@ -160,6 +223,7 @@ function renderPool(poolData) {
   document.getElementById('poolA').textContent = currentFight.gallo_a + ': ' + totalA + ' pts (' + pctA + '%)';
   document.getElementById('poolB').textContent = currentFight.gallo_b + ': ' + totalB + ' pts (' + pctB + '%)';
 }
+
 
 // ── Historial ─────────────────────────────────────────────────────────────────
 function renderHistorial(peleas) {
@@ -200,12 +264,14 @@ function renderHistorial(peleas) {
   `;
 }
 
+
 // ── Apuestas ──────────────────────────────────────────────────────────────────
 function selectGallo(g) {
   selectedGallo = g;
   document.getElementById('btnA').classList.toggle('selected', g === 'A');
   document.getElementById('btnB').classList.toggle('selected', g === 'B');
 }
+
 
 async function placeBet() {
   if (!selectedGallo) return showBetMsg('Selecciona un gallo', 'error');
@@ -232,14 +298,16 @@ async function placeBet() {
   loadMyBets();
 }
 
+
 async function loadMyBets() {
   const bets    = await api('/api/bets/my');
   const activas = bets.filter(b => ['pendiente','matcheada'].includes(b.estado));
   const hist    = bets.filter(b => ['cerrada','terminada'].includes(b.estado) || b.ganador);
 
-  renderBetsTable('betsActivas', activas, 'Sin apuestas activas');
-  renderBetsTable('betsHistorial', hist,  'Sin historial de apuestas');
+  renderBetsTable('betsActivas',   activas, 'Sin apuestas activas');
+  renderBetsTable('betsHistorial', hist,    'Sin historial de apuestas');
 }
+
 
 function renderBetsTable(elId, bets, emptyMsg) {
   const el = document.getElementById(elId);
@@ -272,12 +340,14 @@ function renderBetsTable(elId, bets, emptyMsg) {
   `;
 }
 
+
 function switchBetsTab(tab, btn) {
   document.querySelectorAll('.bets-tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
-  document.getElementById('betsActivas').style.display  = tab === 'activas'  ? 'block' : 'none';
+  document.getElementById('betsActivas').style.display   = tab === 'activas'   ? 'block' : 'none';
   document.getElementById('betsHistorial').style.display = tab === 'historial' ? 'block' : 'none';
 }
+
 
 // ── Retiros ───────────────────────────────────────────────────────────────────
 function abrirRetiro() {
@@ -350,6 +420,7 @@ async function loadMisRetiros() {
     </table>
   `;
 }
+
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function showBetMsg(msg, type) {

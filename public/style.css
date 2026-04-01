@@ -1,5 +1,6 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+
 :root {
   --rojo:      #c0392b;
   --rojo-clr:  rgba(192,57,43,.18);
@@ -11,9 +12,12 @@
   --border:    #2e2e2e;
   --text:      #e8e8e8;
   --muted:     #888;
+  --primary:   #c0392b;
 }
 
-body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+body { font-family: 'Inter', 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
 
 /* ── Navbar ── */
 .navbar {
@@ -34,6 +38,7 @@ body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--
   border-radius: 6px; cursor: pointer; font-size: .85rem; text-decoration: none;
 }
 .btn-sm:hover { border-color: var(--rojo); color: var(--rojo); }
+
 
 /* ── Auth ── */
 .auth-page { display: flex; justify-content: center; align-items: center; min-height: 100vh; }
@@ -66,9 +71,11 @@ input:focus { outline: none; border-color: var(--rojo); }
 .btn-primary:hover { background: #a93226; }
 .error-msg { color: var(--rojo); font-size: .85rem; text-align: center; min-height: 18px; }
 
+
 /* ── Main ── */
 main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
 h2 { font-size: 1.4rem; margin-bottom: 16px; }
+
 
 /* ── Rooms ── */
 .room-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px,1fr)); gap: 16px; }
@@ -81,6 +88,7 @@ h2 { font-size: 1.4rem; margin-bottom: 16px; }
 .room-card h3 { color: var(--rojo); margin-bottom: 8px; font-size: 1.1rem; }
 .room-card p  { color: var(--muted); font-size: .9rem; }
 
+
 /* ── Room view ── */
 .btn-back {
   background: none; border: 1px solid var(--border);
@@ -89,6 +97,7 @@ h2 { font-size: 1.4rem; margin-bottom: 16px; }
 }
 .btn-back:hover { border-color: var(--rojo); }
 
+
 .room-layout {
   display: grid;
   grid-template-columns: 1fr 380px;
@@ -96,8 +105,9 @@ h2 { font-size: 1.4rem; margin-bottom: 16px; }
   align-items: start;
 }
 
+
 /* Stream */
-.stream-col { position: sticky; top: 72px; }
+.stream-col { position: sticky; top: 72px; display: flex; flex-direction: column; gap: 14px; }
 .stream-box { position: relative; }
 .stream-box iframe {
   width: 100%; aspect-ratio: 16/9;
@@ -105,8 +115,10 @@ h2 { font-size: 1.4rem; margin-bottom: 16px; }
   display: block;
 }
 
+
 /* Fight panel */
 .fight-panel { display: flex; flex-direction: column; gap: 16px; }
+
 
 #fightCard {
   background: var(--surface); border: 1px solid var(--border);
@@ -119,6 +131,7 @@ h2 { font-size: 1.4rem; margin-bottom: 16px; }
 }
 #fightTitle { font-size: 1.1rem; margin-bottom: 10px; }
 
+
 /* Estado badge */
 .estado-badge {
   display: inline-block; padding: 4px 14px;
@@ -128,6 +141,7 @@ h2 { font-size: 1.4rem; margin-bottom: 16px; }
 .estado-en_vivo   { background: var(--rojo-clr);  color: var(--rojo);  border: 1px solid var(--rojo); }
 .estado-terminada { background: var(--verde-clr); color: var(--verde); border: 1px solid var(--verde); }
 
+
 /* Pool bar */
 .pool-bar { display: flex; gap: 8px; margin-bottom: 18px; }
 .pool-a, .pool-b {
@@ -136,6 +150,7 @@ h2 { font-size: 1.4rem; margin-bottom: 16px; }
 }
 .pool-a { background: var(--rojo-clr); border: 1px solid var(--rojo); color: #e07070; }
 .pool-b { background: var(--verde-clr); border: 1px solid var(--verde); color: #6dbb8a; }
+
 
 /* Gallo buttons */
 .label { font-size: .85rem; color: var(--muted); margin-bottom: 8px; }
@@ -150,10 +165,12 @@ h2 { font-size: 1.4rem; margin-bottom: 16px; }
 .btn-gallo-a.selected { background: var(--rojo); color: #fff; }
 .btn-gallo-b.selected { background: var(--verde); color: #fff; }
 
+
 #betAmount { margin-bottom: 10px; }
 .bet-msg { margin-top: 8px; font-size: .88rem; min-height: 18px; }
 .bet-msg.success { color: var(--verde); }
 .bet-msg.error   { color: var(--rojo); }
+
 
 /* Result banner */
 .result-banner {
@@ -162,6 +179,7 @@ h2 { font-size: 1.4rem; margin-bottom: 16px; }
 }
 .banner-rojo  { background: var(--rojo-clr);  color: var(--rojo);  border: 1px solid var(--rojo); }
 .banner-verde { background: var(--verde-clr); color: var(--verde); border: 1px solid var(--verde); }
+
 
 /* ── Mis apuestas con tabs ── */
 .my-bets-section {
@@ -182,6 +200,7 @@ h2 { font-size: 1.4rem; margin-bottom: 16px; }
   box-shadow: 0 1px 4px rgba(0,0,0,.4);
 }
 
+
 /* ── Historial de peleas ── */
 .historial-section {
   background: var(--surface); border: 1px solid var(--border);
@@ -197,6 +216,7 @@ h2 { font-size: 1.4rem; margin-bottom: 16px; }
   color: var(--muted); text-transform: uppercase; letter-spacing: .5px;
 }
 
+
 /* ── Tables ── */
 .no-data { color: var(--muted); font-size: .85rem; padding: 10px 0; }
 .bets-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
@@ -205,6 +225,7 @@ h2 { font-size: 1.4rem; margin-bottom: 16px; }
 .bets-table tr:last-child td { border-bottom: none; }
 .gallo-rojo  { color: #e07070; font-weight: 600; }
 .gallo-verde { color: #6dbb8a; font-weight: 600; }
+
 
 /* ── Modal retiro ── */
 .modal-overlay {
@@ -234,6 +255,7 @@ h2 { font-size: 1.4rem; margin-bottom: 16px; }
   text-transform: uppercase; letter-spacing: .5px; margin-bottom: 12px;
 }
 
+
 /* ── Notificacion flotante ── */
 .notificacion {
   position: fixed; bottom: 24px; right: 24px;
@@ -248,11 +270,97 @@ h2 { font-size: 1.4rem; margin-bottom: 16px; }
   to   { transform: translateY(0);    opacity: 1; }
 }
 
+
+/* ══════════════════════════════
+   CHAT
+══════════════════════════════ */
+.chat-col {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 320px;
+}
+.chat-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: .82rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  flex-shrink: 0;
+}
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.chat-messages::-webkit-scrollbar { width: 4px; }
+.chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+
+.chat-msg { font-size: .82rem; line-height: 1.45; word-break: break-word; }
+.chat-msg .chat-user { font-weight: 700; color: var(--rojo); margin-right: 4px; }
+.chat-msg .chat-text { color: var(--muted); }
+.chat-msg.system .chat-text {
+  color: #555;
+  font-style: italic;
+  font-size: .78rem;
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.chat-input {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 10px;
+  color: var(--text);
+  font-size: .82rem;
+  outline: none;
+  transition: border-color .15s;
+  /* override del input global */
+  width: auto;
+  padding: 7px 10px;
+}
+.chat-input:focus { border-color: var(--rojo); }
+.chat-send {
+  background: var(--rojo);
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-weight: 700;
+  font-size: .8rem;
+  padding: 0 14px;
+  cursor: pointer;
+  transition: opacity .15s;
+  flex-shrink: 0;
+}
+.chat-send:hover { opacity: .85; }
+
+
 /* ── Responsive ── */
 @media (max-width: 900px) {
   .room-layout { grid-template-columns: 1fr; }
   .stream-col  { order: 1; position: static; }
   .fight-panel { order: 2; }
+  .chat-col    { height: 280px; }
   main { padding: 16px; }
   .nav-right { gap: 6px; }
   .btn-sm { padding: 5px 10px; font-size: .8rem; }
