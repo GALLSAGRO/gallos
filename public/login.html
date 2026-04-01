@@ -34,6 +34,9 @@
   </div>
 
   <script>
+    // Si ya tiene sesion activa, ir directo al lobby
+    if (localStorage.getItem('token')) window.location.href = '/';
+
     function switchTab(tab) {
       document.getElementById('loginForm').style.display    = tab === 'login'    ? 'flex' : 'none';
       document.getElementById('registerForm').style.display = tab === 'register' ? 'flex' : 'none';
@@ -53,7 +56,7 @@
       if (!r.ok) return (loginError.textContent = data.error);
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
-      window.location.href = '/';
+      window.location.href = data.user.is_admin ? '/admin' : '/';
     }
 
     async function handleRegister(e) {

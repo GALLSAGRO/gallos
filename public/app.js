@@ -1,5 +1,5 @@
 const token = localStorage.getItem('token');
-if (!token) window.location.href = '/login.html';
+if (!token) window.location.href = '/login';
 
 let user = JSON.parse(localStorage.getItem('user') || '{}');
 let currentRoom   = null;
@@ -369,5 +369,5 @@ function showNotificacion(msg) {
 
 function logout() {
   localStorage.clear();
-  window.location.href = '/login.html';
+  window.location.href = '/login';
 }
