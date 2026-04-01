@@ -7,9 +7,19 @@ router.post('/rooms', auth, adminOnly, async (req, res) => {
   const { slug, nombre, facebook_live_url } = req.body;
   if (!slug || !nombre) return res.status(400).json({ error: 'slug y nombre requeridos' });
   const q = await pool.query(
-    'INSERT INTO rooms (slug, nombre, facebook_live_url) VALUES ($1,$2,$3) RETURNING *',
+    'INSERT INTO rooms (slug, nombre, facebook_live_url, activo) VALUES ($1,$2,$3,true) RETURNING *',
     [slug, nombre, facebook_live_url || null]
   );
+  res.json({ ok: true, room: q.rows[0] });
+});
+
+router.put('/rooms/:id', auth, adminOnly, async (req, res) => {
+  const { nombre, facebook_live_url, activo } = req.body;
+  const q = await pool.query(
+    `UPDATE rooms SET nombre=$1, facebook_live_url=$2, activo=$3 WHERE id=$4 RETURNING *`,
+    [nombre, facebook_live_url, activo, req.params.id]
+  );
+  if (!q.rows[0]) return res.status(404).json({ error: 'Sala no encontrada' });
   res.json({ ok: true, room: q.rows[0] });
 });
 
@@ -33,7 +43,6 @@ router.post('/fights', auth, adminOnly, async (req, res) => {
   const sockets = req.app.get('sockets');
   if (sockets && roomQ.rows[0]) {
     sockets.emitFightCreated(roomQ.rows[0].slug, fight);
-
     const historial = await pool.query(
       'SELECT * FROM peleas WHERE room_id=$1 ORDER BY created_at DESC', [room_id]
     );
@@ -91,10 +100,10 @@ router.post('/fights/:id/winner', auth, adminOnly, async (req, res) => {
 
   for (const m of matches.rows) {
     const winnerUserId = ganador === 'A' ? m.user_a : m.user_b;
-    const stake = Number(m.puntos);
+    const stake      = Number(m.puntos);
     const commission = Math.floor(stake * 0.10);
-    const netProfit = stake - commission;
-    const payout = stake + netProfit;
+    const netProfit  = stake - commission;
+    const payout     = stake + netProfit;
 
     await pool.query('UPDATE usuarios SET puntos = puntos + $1 WHERE id=$2', [payout, winnerUserId]);
     await pool.query(
@@ -115,7 +124,6 @@ router.post('/fights/:id/winner', auth, adminOnly, async (req, res) => {
   const sockets = req.app.get('sockets');
   if (sockets && roomQ.rows[0]) {
     sockets.emitFightResult(roomQ.rows[0].slug, { fight: fightData.rows[0] });
-
     const historial = await pool.query(
       'SELECT * FROM peleas WHERE room_id=$1 ORDER BY created_at DESC', [fightQ.rows[0].room_id]
     );
@@ -137,24 +145,20 @@ router.get('/withdrawals', auth, adminOnly, async (req, res) => {
 
 router.post('/withdrawals/:id/approve', auth, adminOnly, async (req, res) => {
   const id = req.params.id;
-  const q = await pool.query(
+  const q  = await pool.query(
     'SELECT * FROM withdrawal_requests WHERE id=$1 AND status=$2', [id, 'pending']
   );
   if (!q.rows[0]) return res.status(404).json({ error: 'Solicitud no encontrada o ya procesada' });
-
-  await pool.query(
-    "UPDATE withdrawal_requests SET status='approved', updated_at=NOW() WHERE id=$1", [id]
-  );
+  await pool.query("UPDATE withdrawal_requests SET status='approved', updated_at=NOW() WHERE id=$1", [id]);
   res.json({ ok: true });
 });
 
 router.post('/withdrawals/:id/reject', auth, adminOnly, async (req, res) => {
   const id = req.params.id;
-  const q = await pool.query(
+  const q  = await pool.query(
     'SELECT * FROM withdrawal_requests WHERE id=$1 AND status=$2', [id, 'pending']
   );
   if (!q.rows[0]) return res.status(404).json({ error: 'Solicitud no encontrada o ya procesada' });
-
   await pool.query('UPDATE usuarios SET puntos = puntos + $1 WHERE id=$2', [q.rows[0].amount, q.rows[0].user_id]);
   await pool.query(
     "UPDATE withdrawal_requests SET status='rejected', admin_note=$2, updated_at=NOW() WHERE id=$1",
@@ -167,7 +171,6 @@ router.post('/add-points', auth, adminOnly, async (req, res) => {
   const { username, puntos } = req.body;
   const amt = parseInt(puntos, 10);
   if (!username || !amt || amt <= 0) return res.status(400).json({ error: 'Datos invalidos' });
-
   const q = await pool.query(
     'UPDATE usuarios SET puntos = puntos + $1 WHERE username=$2 RETURNING id, username, puntos',
     [amt, username]
@@ -181,19 +184,6 @@ router.get('/users', auth, adminOnly, async (req, res) => {
     'SELECT id, nombre_completo, username, email, numero_celular, puntos, is_admin, created_at FROM usuarios ORDER BY created_at DESC'
   );
   res.json(q.rows);
-});
-
-router.put('/rooms/:id', auth, adminOnly, async (req, res) => {
-  const { nombre, facebook_live_url, activo } = req.body;
-  const q = await pool.query(
-    `UPDATE rooms
-     SET nombre=$1, facebook_live_url=$2, activo=$3
-     WHERE id=$4
-     RETURNING *`,
-    [nombre, facebook_live_url, activo, req.params.id]
-  );
-  if (!q.rows[0]) return res.status(404).json({ error: 'Sala no encontrada' });
-  res.json({ ok: true, room: q.rows[0] });
 });
 
 module.exports = router;

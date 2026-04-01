@@ -14,43 +14,51 @@
     select       { width: 100%; padding: 10px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); margin-bottom: 10px; }
     .active-fight-info { background: var(--surface2); border-radius: 8px; padding: 12px; margin-bottom: 14px; font-size: .95rem; }
     .winner-row  { display: flex; gap: 10px; margin-top: 10px; }
-    .btn-win-a   { flex: 1; padding: 12px; border: none; border-radius: 8px; background: var(--rojo); color: #fff; font-weight: 700; cursor: pointer; font-size: .95rem; }
-    .btn-win-b   { flex: 1; padding: 12px; border: none; border-radius: 8px; background: var(--verde); color: #fff; font-weight: 700; cursor: pointer; font-size: .95rem; }
-    .btn-win-a:hover { background: #a93226; }
-    .btn-win-b:hover { background: #1e8449; }
-    .btn-close   { width: 100%; padding: 11px; border: 1px solid var(--rojo); border-radius: 8px; background: transparent; color: var(--rojo); font-weight: 600; cursor: pointer; margin-bottom: 10px; }
-    .btn-close:hover { background: var(--rojo-clr); }
-    .btn-secondary { width: 100%; padding: 11px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--text); font-weight: 600; cursor: pointer; margin-bottom: 10px; }
-    .btn-secondary:hover { border-color: var(--verde); color: var(--verde); }
-    table        { width: 100%; border-collapse: collapse; font-size: .85rem; }
-    th, td       { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; }
-    th           { color: var(--muted); font-weight: 600; background: var(--surface2); }
-    .badge       { padding: 3px 10px; border-radius: 12px; font-size: .78rem; font-weight: 600; }
-    .badge-pending  { background: rgba(243,156,18,.2); color: #f39c18; }
-    .badge-approved { background: var(--verde-clr); color: var(--verde); }
-    .badge-rejected { background: var(--rojo-clr);  color: var(--rojo); }
-    .action-btns { display: flex; gap: 6px; }
-    .btn-ok  { background: var(--verde); border: none; color: #fff; padding: 5px 12px; border-radius: 5px; cursor: pointer; font-size: .82rem; }
-    .btn-no  { background: var(--rojo);  border: none; color: #fff; padding: 5px 12px; border-radius: 5px; cursor: pointer; font-size: .82rem; }
-    .sala-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
-    .sala-row:last-child { border-bottom: none; }
-    .sala-info { flex: 1; }
-    .sala-info strong { display: block; font-size: .95rem; }
-    .sala-info span { font-size: .8rem; color: var(--muted); word-break: break-all; }
-    .btn-edit { background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: .82rem; white-space: nowrap; }
-    .btn-edit:hover { border-color: var(--rojo); color: var(--rojo); }
+    .btn-win-a   { flex:1; padding:12px; border:none; border-radius:8px; background:var(--rojo);  color:#fff; font-weight:700; cursor:pointer; font-size:.95rem; }
+    .btn-win-b   { flex:1; padding:12px; border:none; border-radius:8px; background:var(--verde); color:#fff; font-weight:700; cursor:pointer; font-size:.95rem; }
+    .btn-win-a:hover { background:#a93226; }
+    .btn-win-b:hover { background:#1e8449; }
+    .btn-close   { width:100%; padding:11px; border:1px solid var(--rojo); border-radius:8px; background:transparent; color:var(--rojo); font-weight:600; cursor:pointer; margin-bottom:10px; }
+    .btn-close:hover { background:var(--rojo-clr); }
+    .btn-secondary-admin { width:100%; padding:11px; border:1px solid var(--border); border-radius:8px; background:transparent; color:var(--text); font-weight:600; cursor:pointer; margin-bottom:10px; }
+    .btn-secondary-admin:hover { border-color:var(--verde); color:var(--verde); }
+    table        { width:100%; border-collapse:collapse; font-size:.85rem; }
+    th,td        { padding:10px 12px; border-bottom:1px solid var(--border); text-align:left; }
+    th           { color:var(--muted); font-weight:600; background:var(--surface2); }
+    .badge       { padding:3px 10px; border-radius:12px; font-size:.78rem; font-weight:600; }
+    .badge-pending  { background:rgba(243,156,18,.2); color:#f39c18; }
+    .badge-approved { background:var(--verde-clr); color:var(--verde); }
+    .badge-rejected { background:var(--rojo-clr);  color:var(--rojo); }
+    .action-btns { display:flex; gap:6px; }
+    .btn-ok  { background:var(--verde); border:none; color:#fff; padding:5px 12px; border-radius:5px; cursor:pointer; font-size:.82rem; }
+    .btn-no  { background:var(--rojo);  border:none; color:#fff; padding:5px 12px; border-radius:5px; cursor:pointer; font-size:.82rem; }
+
+    /* Sala row */
+    .sala-row { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); }
+    .sala-row:last-child { border-bottom:none; }
+    .sala-info { flex:1; }
+    .sala-info strong { display:block; font-size:.95rem; }
+    .sala-info span   { font-size:.78rem; color:var(--muted); word-break:break-all; }
+    .sala-status { font-size:.75rem; font-weight:600; padding:2px 8px; border-radius:10px; white-space:nowrap; }
+    .sala-status.activa   { background:var(--verde-clr); color:var(--verde); }
+    .sala-status.inactiva { background:var(--rojo-clr);  color:var(--rojo); }
+    .btn-edit { background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:6px 14px; border-radius:6px; cursor:pointer; font-size:.82rem; white-space:nowrap; }
+    .btn-edit:hover { border-color:var(--rojo); color:var(--rojo); }
+
     /* Modal */
-    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 200; justify-content: center; align-items: center; }
-    .modal-overlay.open { display: flex; }
-    .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 28px; width: 100%; max-width: 480px; }
-    .modal h3 { color: var(--rojo); margin-bottom: 20px; font-size: 1rem; }
-    .modal label { display: block; font-size: .82rem; color: var(--muted); margin-bottom: 4px; margin-top: 12px; }
-    .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
-    .modal-actions button { flex: 1; }
-    .toggle-row { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; }
-    .toggle-row label { font-size: .9rem; color: var(--text); }
-    input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--verde); cursor: pointer; }
-    @media (max-width: 700px) { .admin-grid { grid-template-columns: 1fr; } .full-width { grid-column: span 1; } }
+    .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.75); z-index:200; justify-content:center; align-items:center; padding:20px; }
+    .modal-overlay.open { display:flex; }
+    .modal { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:28px; width:100%; max-width:480px; max-height:90vh; overflow-y:auto; }
+    .modal h3 { color:var(--rojo); margin-bottom:20px; font-size:1rem; }
+    .modal label { display:block; font-size:.82rem; color:var(--muted); margin-bottom:4px; margin-top:14px; }
+    .modal small { display:block; font-size:.75rem; color:var(--muted); margin-top:3px; }
+    .modal-actions { display:flex; gap:10px; margin-top:20px; }
+    .modal-actions button { flex:1; }
+    .toggle-row { display:flex; align-items:center; justify-content:space-between; margin-top:16px; padding:10px 0; border-top:1px solid var(--border); }
+    .toggle-row label { font-size:.9rem; color:var(--text); }
+    input[type="checkbox"] { width:18px; height:18px; accent-color:var(--verde); cursor:pointer; }
+
+    @media (max-width:700px) { .admin-grid { grid-template-columns:1fr; } .full-width { grid-column:span 1; } }
   </style>
 </head>
 <body>
@@ -62,21 +70,25 @@
     </div>
   </nav>
 
-  <!-- Modal editar sala -->
+  <!-- Modal editar/crear sala -->
   <div class="modal-overlay" id="modalSala">
     <div class="modal">
-      <h3>Editar Sala</h3>
+      <h3 id="modalSalaTitulo">Editar Sala</h3>
       <input type="hidden" id="editSalaId"/>
       <label>Nombre de la sala</label>
-      <input type="text" id="editNombre"/>
-      <label>URL del stream (Facebook Live, YouTube embed, etc.)</label>
-      <input type="text" id="editStreamUrl" placeholder="https://..."/>
+      <input type="text" id="editNombre" placeholder="Ej: Palenque Norte"/>
+      <label>Slug (identificador único, sin espacios)</label>
+      <input type="text" id="editSlug" placeholder="Ej: palenque-norte"/>
+      <small>Solo al crear — no se puede cambiar después</small>
+      <label>URL del stream</label>
+      <input type="text" id="editStreamUrl" placeholder="https://www.youtube.com/embed/ID"/>
+      <small>YouTube: <strong>youtube.com/embed/ID</strong> — Facebook: <strong>facebook.com/plugins/video.php?href=...</strong></small>
       <div class="toggle-row">
-        <label>Sala activa</label>
-        <input type="checkbox" id="editActivo"/>
+        <label>Sala activa (visible para usuarios)</label>
+        <input type="checkbox" id="editActivo" checked/>
       </div>
       <div class="modal-actions">
-        <button class="btn-secondary" onclick="cerrarModal()">Cancelar</button>
+        <button class="btn-secondary-admin" onclick="cerrarModal()">Cancelar</button>
         <button class="btn-primary" onclick="guardarSala()">Guardar</button>
       </div>
       <p id="editSalaMsg" class="bet-msg"></p>
@@ -89,6 +101,7 @@
       <!-- Salas -->
       <div class="card">
         <h3>Salas / Streams</h3>
+        <button class="btn-primary" style="margin-bottom:14px; width:100%" onclick="nuevaSala()">+ Nueva sala</button>
         <div id="salasList"></div>
       </div>
 
@@ -98,7 +111,7 @@
         <select id="fightRoom"></select>
         <input type="text" id="galloA" placeholder="Nombre Gallo A (rojo)"/>
         <input type="text" id="galloB" placeholder="Nombre Gallo B (verde)"/>
-        <button class="btn-primary" onclick="createFight()">Crear pelea</button>
+        <button class="btn-primary" style="margin-top:10px" onclick="createFight()">Crear pelea</button>
         <p id="fightMsg" class="bet-msg"></p>
       </div>
 
@@ -122,8 +135,8 @@
       <div class="card">
         <h3>Agregar Puntos</h3>
         <input type="text" id="apUsername" placeholder="Username del usuario"/>
-        <input type="number" id="apPuntos" placeholder="Cantidad de puntos"/>
-        <button class="btn-primary" onclick="addPoints()">Agregar</button>
+        <input type="number" id="apPuntos" placeholder="Cantidad de puntos" style="margin-top:10px"/>
+        <button class="btn-primary" style="margin-top:10px" onclick="addPoints()">Agregar</button>
         <p id="apMsg" class="bet-msg"></p>
       </div>
 
@@ -147,7 +160,7 @@
     if (!token) window.location.href = '/login.html';
 
     async function api(url, opts = {}) {
-      opts.headers = { ...(opts.headers || {}), Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+      opts.headers = { ...(opts.headers||{}), Authorization:`Bearer ${token}`, 'Content-Type':'application/json' };
       const r = await fetch(url, opts);
       return r.json();
     }
@@ -155,11 +168,10 @@
     let activeFightId = null;
     let allRooms = [];
 
-    // ── Salas ────────────────────────────────────────────────────────────────
+    // ── Salas ─────────────────────────────────────────────────────────────────
     async function loadRooms() {
       allRooms = await api('/api/rooms');
 
-      // Lista de salas con boton editar
       const el = document.getElementById('salasList');
       el.innerHTML = allRooms.map(r => `
         <div class="sala-row">
@@ -167,27 +179,43 @@
             <strong>${r.nombre}</strong>
             <span>${r.facebook_live_url || 'Sin URL de stream'}</span>
           </div>
+          <span class="sala-status ${r.activo ? 'activa' : 'inactiva'}">${r.activo ? 'Activa' : 'Inactiva'}</span>
           <button class="btn-edit" onclick="abrirModal(${r.id})">Editar</button>
         </div>
       `).join('');
 
-      // Selectores de sala en otros formularios
-      ['fightRoom', 'controlRoom'].forEach(id => {
+      // Todos los selectores muestran todas las salas (admin ve todas)
+      ['fightRoom','controlRoom'].forEach(id => {
         document.getElementById(id).innerHTML = allRooms.map(r =>
-          `<option value="${r.id}" data-slug="${r.slug}">${r.nombre}</option>`
+          `<option value="${r.id}" data-slug="${r.slug}">${r.nombre}${r.activo ? '' : ' (inactiva)'}</option>`
         ).join('');
       });
 
       loadActiveFight();
     }
 
+    function nuevaSala() {
+      document.getElementById('modalSalaTitulo').textContent = 'Nueva Sala';
+      document.getElementById('editSalaId').value    = '';
+      document.getElementById('editNombre').value    = '';
+      document.getElementById('editSlug').value      = '';
+      document.getElementById('editStreamUrl').value = '';
+      document.getElementById('editActivo').checked  = true;
+      document.getElementById('editSlug').disabled   = false;
+      document.getElementById('editSalaMsg').textContent = '';
+      document.getElementById('modalSala').classList.add('open');
+    }
+
     function abrirModal(roomId) {
       const room = allRooms.find(r => r.id === roomId);
       if (!room) return;
+      document.getElementById('modalSalaTitulo').textContent = 'Editar Sala';
       document.getElementById('editSalaId').value    = room.id;
       document.getElementById('editNombre').value    = room.nombre;
+      document.getElementById('editSlug').value      = room.slug;
       document.getElementById('editStreamUrl').value = room.facebook_live_url || '';
       document.getElementById('editActivo').checked  = room.activo;
+      document.getElementById('editSlug').disabled   = true; // no se puede cambiar el slug
       document.getElementById('editSalaMsg').textContent = '';
       document.getElementById('modalSala').classList.add('open');
     }
@@ -199,26 +227,37 @@
     async function guardarSala() {
       const id     = document.getElementById('editSalaId').value;
       const nombre = document.getElementById('editNombre').value.trim();
+      const slug   = document.getElementById('editSlug').value.trim();
       const url    = document.getElementById('editStreamUrl').value.trim();
       const activo = document.getElementById('editActivo').checked;
+      const el     = document.getElementById('editSalaMsg');
 
-      if (!nombre) return;
+      if (!nombre) { el.textContent = 'El nombre es requerido'; el.className = 'bet-msg error'; return; }
 
-      const res = await api(`/api/admin/rooms/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify({ nombre, facebook_live_url: url, activo })
-      });
+      let res;
+      if (id) {
+        // Editar existente
+        res = await api(`/api/admin/rooms/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ nombre, facebook_live_url: url, activo })
+        });
+      } else {
+        // Crear nueva
+        if (!slug) { el.textContent = 'El slug es requerido'; el.className = 'bet-msg error'; return; }
+        res = await api('/api/admin/rooms', {
+          method: 'POST',
+          body: JSON.stringify({ slug, nombre, facebook_live_url: url })
+        });
+      }
 
-      const el = document.getElementById('editSalaMsg');
       if (!res.ok) { el.textContent = res.error; el.className = 'bet-msg error'; }
       else {
-        el.textContent = 'Guardado correctamente';
+        el.textContent = id ? 'Guardado correctamente' : 'Sala creada correctamente';
         el.className   = 'bet-msg success';
         setTimeout(() => { cerrarModal(); loadRooms(); }, 800);
       }
     }
 
-    // Cerrar modal al click fuera
     document.getElementById('modalSala').addEventListener('click', function(e) {
       if (e.target === this) cerrarModal();
     });
@@ -232,8 +271,8 @@
       const data  = await api(`/api/rooms/${slug}`);
       const fight = data.activeFight;
       const info  = document.getElementById('activeFightInfo');
-      const closeBtn = document.getElementById('closeBetsBtn');
-      const winBtns  = document.getElementById('winnerButtons');
+      const closeBtn  = document.getElementById('closeBetsBtn');
+      const winBtns   = document.getElementById('winnerButtons');
 
       if (!fight) {
         info.innerHTML         = 'Sin pelea activa';
@@ -250,10 +289,8 @@
         <span style="color:var(--verde); font-weight:700">${fight.gallo_b}</span>
         &mdash; <em>${fight.estado}</em>
       `;
-
       document.getElementById('winA').textContent = fight.gallo_a;
       document.getElementById('winB').textContent = fight.gallo_b;
-
       closeBtn.style.display = fight.estado === 'apostando' ? 'block' : 'none';
       winBtns.style.display  = fight.estado === 'en_vivo'   ? 'block' : 'none';
     }
@@ -389,7 +426,6 @@
 
     function logout() { localStorage.clear(); window.location.href = '/login.html'; }
 
-    // ── Init ──────────────────────────────────────────────────────────────────
     loadRooms();
     loadWithdrawals();
     loadUsers();

@@ -233,35 +233,50 @@ async function placeBet() {
 }
 
 async function loadMyBets() {
-  const bets = await api('/api/bets/my');
-  const el   = document.getElementById('myBetsList');
-  if (!bets.length) {
-    el.innerHTML = '<p class="no-data">Sin apuestas registradas</p>';
-    return;
-  }
+  const bets    = await api('/api/bets/my');
+  const activas = bets.filter(b => ['pendiente','matcheada'].includes(b.estado));
+  const hist    = bets.filter(b => ['cerrada','terminada'].includes(b.estado) || b.ganador);
+
+  renderBetsTable('betsActivas', activas, 'Sin apuestas activas');
+  renderBetsTable('betsHistorial', hist,  'Sin historial de apuestas');
+}
+
+function renderBetsTable(elId, bets, emptyMsg) {
+  const el = document.getElementById(elId);
+  if (!bets.length) { el.innerHTML = `<p class="no-data">${emptyMsg}</p>`; return; }
   el.innerHTML = `
     <table class="bets-table">
       <thead>
-        <tr><th>Sala</th><th>Pelea</th><th>Gallo</th><th>Pts</th><th>Matched</th><th>Estado</th></tr>
+        <tr><th>Pelea</th><th>Gallo</th><th>Pts</th><th>Estado</th></tr>
       </thead>
       <tbody>
         ${bets.map(b => {
           const galloName  = b.gallo === 'A' ? b.gallo_a : b.gallo_b;
           const galloClass = b.gallo === 'A' ? 'gallo-rojo' : 'gallo-verde';
+          const ganoBadge  = b.ganador
+            ? b.ganador === b.gallo
+              ? '<span style="color:var(--verde);font-weight:700"> ✓ Ganaste</span>'
+              : '<span style="color:var(--rojo);font-weight:700"> ✗ Perdiste</span>'
+            : '';
           return `
             <tr>
-              <td>${b.sala}</td>
-              <td>${b.gallo_a} vs ${b.gallo_b}</td>
+              <td style="font-size:.8rem">${b.gallo_a} vs ${b.gallo_b}</td>
               <td class="${galloClass}">${galloName}</td>
               <td>${b.puntos_total}</td>
-              <td>${b.puntos_matched}</td>
-              <td>${b.estado}</td>
+              <td style="font-size:.8rem">${b.estado}${ganoBadge}</td>
             </tr>
           `;
         }).join('')}
       </tbody>
     </table>
   `;
+}
+
+function switchBetsTab(tab, btn) {
+  document.querySelectorAll('.bets-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('betsActivas').style.display  = tab === 'activas'  ? 'block' : 'none';
+  document.getElementById('betsHistorial').style.display = tab === 'historial' ? 'block' : 'none';
 }
 
 // ── Retiros ───────────────────────────────────────────────────────────────────

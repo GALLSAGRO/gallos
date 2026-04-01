@@ -15,7 +15,7 @@
 
 body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
 
-/* Navbar */
+/* ── Navbar ── */
 .navbar {
   display: flex; justify-content: space-between; align-items: center;
   background: var(--surface); padding: 12px 24px;
@@ -23,7 +23,7 @@ body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--
   position: sticky; top: 0; z-index: 100;
 }
 .logo { font-size: 1.3rem; font-weight: 700; color: var(--rojo); letter-spacing: 1px; }
-.nav-right { display: flex; gap: 12px; align-items: center; font-size: .9rem; }
+.nav-right { display: flex; gap: 10px; align-items: center; font-size: .9rem; flex-wrap: wrap; }
 .puntos-badge {
   background: var(--verde); color: #fff;
   padding: 4px 12px; border-radius: 20px; font-weight: 600; font-size: .85rem;
@@ -35,7 +35,7 @@ body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--
 }
 .btn-sm:hover { border-color: var(--rojo); color: var(--rojo); }
 
-/* Auth */
+/* ── Auth ── */
 .auth-page { display: flex; justify-content: center; align-items: center; min-height: 100vh; }
 .auth-card {
   background: var(--surface); padding: 36px;
@@ -55,22 +55,22 @@ form { display: flex; flex-direction: column; gap: 12px; }
 input {
   padding: 11px 14px; background: var(--surface2);
   border: 1px solid var(--border); border-radius: 8px;
-  color: var(--text); font-size: .95rem;
+  color: var(--text); font-size: .95rem; width: 100%;
 }
 input:focus { outline: none; border-color: var(--rojo); }
 .btn-primary {
   background: var(--rojo); color: #fff; border: none;
   padding: 12px; border-radius: 8px;
-  font-size: 1rem; font-weight: 600; cursor: pointer; transition: .15s;
+  font-size: 1rem; font-weight: 600; cursor: pointer; transition: .15s; width: 100%;
 }
 .btn-primary:hover { background: #a93226; }
 .error-msg { color: var(--rojo); font-size: .85rem; text-align: center; min-height: 18px; }
 
-/* Main */
+/* ── Main ── */
 main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
 h2 { font-size: 1.4rem; margin-bottom: 16px; }
 
-/* Rooms */
+/* ── Rooms ── */
 .room-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px,1fr)); gap: 16px; }
 .room-card {
   background: var(--surface); border: 1px solid var(--border);
@@ -81,7 +81,7 @@ h2 { font-size: 1.4rem; margin-bottom: 16px; }
 .room-card h3 { color: var(--rojo); margin-bottom: 8px; font-size: 1.1rem; }
 .room-card p  { color: var(--muted); font-size: .9rem; }
 
-/* Room view */
+/* ── Room view ── */
 .btn-back {
   background: none; border: 1px solid var(--border);
   color: var(--text); padding: 8px 18px; border-radius: 6px;
@@ -89,7 +89,6 @@ h2 { font-size: 1.4rem; margin-bottom: 16px; }
 }
 .btn-back:hover { border-color: var(--rojo); }
 
-/* Layout PC: dos columnas */
 .room-layout {
   display: grid;
   grid-template-columns: 1fr 380px;
@@ -99,12 +98,16 @@ h2 { font-size: 1.4rem; margin-bottom: 16px; }
 
 /* Stream */
 .stream-col { position: sticky; top: 72px; }
-.stream-box iframe { width: 100%; aspect-ratio: 16/9; border-radius: 10px; border: none; background: #000; }
+.stream-box { position: relative; }
+.stream-box iframe {
+  width: 100%; aspect-ratio: 16/9;
+  border-radius: 10px; border: none; background: #000;
+  display: block;
+}
 
-/* Fight panel: columna derecha como flex vertical */
+/* Fight panel */
 .fight-panel { display: flex; flex-direction: column; gap: 16px; }
 
-/* Card de pelea activa */
 #fightCard {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 12px; padding: 20px;
@@ -147,7 +150,7 @@ h2 { font-size: 1.4rem; margin-bottom: 16px; }
 .btn-gallo-a.selected { background: var(--rojo); color: #fff; }
 .btn-gallo-b.selected { background: var(--verde); color: #fff; }
 
-#betAmount { width: 100%; margin-bottom: 10px; }
+#betAmount { margin-bottom: 10px; }
 .bet-msg { margin-top: 8px; font-size: .88rem; min-height: 18px; }
 .bet-msg.success { color: var(--verde); }
 .bet-msg.error   { color: var(--rojo); }
@@ -160,28 +163,42 @@ h2 { font-size: 1.4rem; margin-bottom: 16px; }
 .banner-rojo  { background: var(--rojo-clr);  color: var(--rojo);  border: 1px solid var(--rojo); }
 .banner-verde { background: var(--verde-clr); color: var(--verde); border: 1px solid var(--verde); }
 
-/* Mis apuestas */
+/* ── Mis apuestas con tabs ── */
 .my-bets-section {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 12px; padding: 18px;
 }
-.my-bets-section h3 {
-  font-size: .85rem; margin-bottom: 12px;
-  color: var(--muted); text-transform: uppercase; letter-spacing: .5px;
+.bets-tabs {
+  display: flex; gap: 4px; margin-bottom: 14px;
+  background: var(--surface2); padding: 4px; border-radius: 8px;
+}
+.bets-tab {
+  flex: 1; padding: 7px 10px; border: none;
+  border-radius: 6px; font-size: .82rem; font-weight: 600;
+  cursor: pointer; color: var(--muted); background: transparent; transition: .15s;
+}
+.bets-tab.active {
+  background: var(--surface); color: var(--text);
+  box-shadow: 0 1px 4px rgba(0,0,0,.4);
 }
 
-/* Historial */
+/* ── Historial de peleas ── */
 .historial-section {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 12px; padding: 18px;
 }
+.historial-section h3,
+.my-bets-section > h3 {
+  font-size: .82rem; margin-bottom: 12px;
+  color: var(--muted); text-transform: uppercase; letter-spacing: .5px;
+}
 .historial-section h3 {
-  font-size: .85rem; margin-bottom: 12px;
+  font-size: .82rem; margin-bottom: 12px;
   color: var(--muted); text-transform: uppercase; letter-spacing: .5px;
 }
 
-/* Tables */
-.no-data { color: var(--muted); font-size: .88rem; }
+/* ── Tables ── */
+.no-data { color: var(--muted); font-size: .85rem; padding: 10px 0; }
 .bets-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
 .bets-table th, .bets-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); text-align: left; }
 .bets-table th { background: var(--surface2); color: var(--muted); font-weight: 600; }
@@ -189,7 +206,35 @@ h2 { font-size: 1.4rem; margin-bottom: 16px; }
 .gallo-rojo  { color: #e07070; font-weight: 600; }
 .gallo-verde { color: #6dbb8a; font-weight: 600; }
 
-/* Notificacion flotante */
+/* ── Modal retiro ── */
+.modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,.75); z-index: 200;
+  justify-content: center; align-items: center; padding: 20px;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 28px; width: 100%; max-width: 460px;
+  max-height: 90vh; overflow-y: auto;
+}
+.modal h3 { color: var(--rojo); margin-bottom: 20px; font-size: 1rem; }
+.modal label { display: block; font-size: .82rem; color: var(--muted); margin-bottom: 4px; margin-top: 14px; }
+.modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+.modal-actions button { flex: 1; }
+.btn-secondary {
+  background: transparent; border: 1px solid var(--border);
+  color: var(--text); padding: 12px; border-radius: 8px;
+  font-size: 1rem; font-weight: 600; cursor: pointer; transition: .15s; width: 100%;
+}
+.btn-secondary:hover { border-color: var(--muted); }
+.retiro-historial { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 16px; }
+.retiro-historial h4 {
+  font-size: .82rem; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .5px; margin-bottom: 12px;
+}
+
+/* ── Notificacion flotante ── */
 .notificacion {
   position: fixed; bottom: 24px; right: 24px;
   background: var(--surface); border: 1px solid var(--verde);
@@ -203,40 +248,12 @@ h2 { font-size: 1.4rem; margin-bottom: 16px; }
   to   { transform: translateY(0);    opacity: 1; }
 }
 
-/* Responsive celular */
+/* ── Responsive ── */
 @media (max-width: 900px) {
-  .room-layout {
-    grid-template-columns: 1fr;
-  }
-  /* Stream primero, fight panel después */
+  .room-layout { grid-template-columns: 1fr; }
   .stream-col  { order: 1; position: static; }
   .fight-panel { order: 2; }
+  main { padding: 16px; }
+  .nav-right { gap: 6px; }
+  .btn-sm { padding: 5px 10px; font-size: .8rem; }
 }
-/* Modal generico */
-.modal-overlay {
-  display: none; position: fixed; inset: 0;
-  background: rgba(0,0,0,.75); z-index: 200;
-  justify-content: center; align-items: center;
-  padding: 20px;
-}
-.modal-overlay.open { display: flex; }
-.modal {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 14px; padding: 28px; width: 100%; max-width: 460px;
-  max-height: 90vh; overflow-y: auto;
-}
-.modal h3 { color: var(--rojo); margin-bottom: 20px; font-size: 1rem; }
-.modal label { display: block; font-size: .82rem; color: var(--muted); margin-bottom: 4px; margin-top: 14px; }
-.modal input { margin-bottom: 0; }
-.modal-actions { display: flex; gap: 10px; margin-top: 20px; }
-.modal-actions button { flex: 1; }
-.btn-secondary {
-  background: transparent; border: 1px solid var(--border);
-  color: var(--text); padding: 12px; border-radius: 8px;
-  font-size: 1rem; font-weight: 600; cursor: pointer; transition: .15s;
-}
-.btn-secondary:hover { border-color: var(--muted); }
-
-/* Historial de retiros dentro del modal */
-.retiro-historial { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 16px; }
-.retiro-historial h4 { font-size: .82rem; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 12px; }

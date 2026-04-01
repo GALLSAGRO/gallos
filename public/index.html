@@ -53,7 +53,9 @@
         <!-- Columna izquierda: solo stream -->
         <div class="stream-col">
           <div class="stream-box">
-            <iframe id="liveFrame" src="" allowfullscreen></iframe>
+            <iframe id="liveFrame" src="" allowfullscreen
+              allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share">
+            </iframe>
           </div>
         </div>
 
@@ -85,10 +87,14 @@
             <div id="resultBanner" style="display:none" class="result-banner"></div>
           </div>
 
-          <!-- Mis apuestas -->
+          <!-- Mis apuestas con tabs -->
           <section class="my-bets-section">
-            <h3>Mis apuestas</h3>
-            <div id="myBetsList"></div>
+            <div class="bets-tabs">
+              <button class="bets-tab active" onclick="switchBetsTab('activas', this)">Activas</button>
+              <button class="bets-tab" onclick="switchBetsTab('historial', this)">Historial</button>
+            </div>
+            <div id="betsActivas"></div>
+            <div id="betsHistorial" style="display:none"></div>
           </section>
 
           <!-- Historial de peleas -->
