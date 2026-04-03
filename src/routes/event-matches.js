@@ -1,137 +1,82 @@
-const express = require('express');
-const router = express.Router();
-const pool = require('../models/db');
+const router = require('express').Router();
+const pool   = require('../models/db');
+const admin  = require('../middleware/admin');
 
-function requireAdminOrOperator(req, res, next) {
-  const role = req.user?.role;
-  if (role !== 'admin' && role !== 'operator' && !req.user?.is_admin) {
-    return res.status(403).json({ error: 'Sin permisos' });
-  }
-  next();
-}
-
-// -------------------------------------------------------
 // GET /api/event-matches/:eventId
-// Cartelera completa del evento con marcador acumulado
-// -------------------------------------------------------
-router.get('/:eventId', requireAdminOrOperator, async (req, res) => {
-  const { eventId } = req.params;
+router.get('/:eventId', async (req, res) => {
   try {
-    const matchesRes = await pool.query(
-      `SELECT id, numero_pelea, orden, gallo_rojo, gallo_verde,
-              estado, resultado, puntos_rojo, puntos_verde,
-              started_at, finished_at, skipped_reason, notes
-       FROM event_matches
-       WHERE event_id = $1
-       ORDER BY orden ASC`,
-      [eventId]
+    const { rows } = await pool.query(
+      `SELECT em.id, em.numero_pelea, em.orden, em.gallo_rojo, em.gallo_verde,
+              em.estado, em.resultado, em.puntos_rojo, em.puntos_verde,
+              em.equipo_rojo_id, em.equipo_verde_id, em.finished_at,
+              tr.nombre AS nombre_equipo_rojo,
+              tv.nombre AS nombre_equipo_verde
+       FROM event_matches em
+       LEFT JOIN event_teams tr ON tr.id = em.equipo_rojo_id
+       LEFT JOIN event_teams tv ON tv.id = em.equipo_verde_id
+       WHERE em.event_id = $1
+       ORDER BY em.orden ASC`,
+      [Number(req.params.eventId)]
     );
-
-    const scoresRes = await pool.query(
-      `SELECT side, team_name, puntos, ganadas, empatadas, perdidas
-       FROM v_event_team_scores WHERE event_id = $1`,
-      [eventId]
-    );
-
-    const eventRes = await pool.query(
-      `SELECT id, nombre, estado, numero_pelea_actual, total_peleas FROM events WHERE id = $1`,
-      [eventId]
-    );
-
-    res.json({
-      event:   eventRes.rows[0] || null,
-      matches: matchesRes.rows,
-      scores:  scoresRes.rows
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error al obtener cartelera' });
+    res.json(rows);
+  } catch (e) {
+    console.error('GET /api/event-matches/:eventId', e);
+    res.status(500).json({ error: 'Error al obtener peleas' });
   }
 });
 
-// -------------------------------------------------------
-// POST /api/event-matches/:eventId
-// Agregar pelea a la cartelera
-// Body: { gallo_rojo, gallo_verde, numero_pelea?, notas? }
-// -------------------------------------------------------
-router.post('/:eventId', requireAdminOrOperator, async (req, res) => {
-  const { eventId } = req.params;
-  const { gallo_rojo, gallo_verde, numero_pelea, notas } = req.body;
+// POST /api/event-matches/:eventId — agregar pelea a cartelera
+router.post('/:eventId', admin, async (req, res) => {
+  const event_id = Number(req.params.eventId);
+  const { gallo_rojo, gallo_verde, equipo_rojo_id, equipo_verde_id, notas } = req.body;
 
   if (!gallo_rojo || !gallo_verde) {
-    return res.status(400).json({ error: 'gallo_rojo y gallo_verde son requeridos' });
+    return res.status(400).json({ error: 'gallo_rojo y gallo_verde son obligatorios' });
+  }
+  if (!equipo_rojo_id || !equipo_verde_id) {
+    return res.status(400).json({ error: 'equipo_rojo_id y equipo_verde_id son obligatorios' });
   }
 
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-
-    // Verificar que el evento existe y no está finalizado
-    const evQ = await client.query(
-      `SELECT id, estado, total_peleas FROM events WHERE id = $1 FOR UPDATE`,
-      [eventId]
+    const ordenQ = await pool.query(
+      `SELECT COALESCE(MAX(orden),0)+1 AS next_orden
+       FROM event_matches WHERE event_id=$1`,
+      [event_id]
     );
-    const event = evQ.rows[0];
-    if (!event) throw new Error('Evento no encontrado');
-    if (event.estado === 'finalizado' || event.estado === 'cancelado') {
-      throw new Error('No se pueden agregar peleas a un evento cerrado');
-    }
+    const orden        = ordenQ.rows[0].next_orden;
+    const numero_pelea = orden;
 
-    // Obtener equipos del evento
-    const teamsQ = await client.query(
-      `SELECT id, side FROM event_teams WHERE event_id = $1`,
-      [eventId]
-    );
-    const teamRojo  = teamsQ.rows.find(t => t.side === 'R');
-    const teamVerde = teamsQ.rows.find(t => t.side === 'V');
-
-    // Calcular orden (siguiente disponible)
-    const ordenQ = await client.query(
-      `SELECT COALESCE(MAX(orden), 0) + 1 AS siguiente FROM event_matches WHERE event_id = $1`,
-      [eventId]
-    );
-    const orden = ordenQ.rows[0].siguiente;
-
-    // numero_pelea: usar el enviado o el mismo que el orden
-    const numPelea = numero_pelea || orden;
-
-    const { rows } = await client.query(
+    const { rows } = await pool.query(
       `INSERT INTO event_matches
-         (event_id, numero_pelea, orden, equipo_rojo_id, equipo_verde_id,
-          gallo_rojo, gallo_verde, estado, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pendiente', $8)
+         (event_id, numero_pelea, orden, gallo_rojo, gallo_verde,
+          equipo_rojo_id, equipo_verde_id, estado, notas)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'pendiente',$8)
        RETURNING *`,
-      [eventId, numPelea, orden,
-       teamRojo?.id || null, teamVerde?.id || null,
-       gallo_rojo, gallo_verde, notas || null]
+      [event_id, numero_pelea, orden,
+       gallo_rojo.trim(), gallo_verde.trim(),
+       equipo_rojo_id, equipo_verde_id,
+       notas || null]
     );
 
-    // Actualizar total_peleas en el evento
-    await client.query(
-      `UPDATE events SET total_peleas = total_peleas + 1 WHERE id = $1`,
-      [eventId]
+    await pool.query(
+      `UPDATE events SET total_peleas = (
+         SELECT COUNT(*) FROM event_matches
+         WHERE event_id=$1 AND estado != 'cancelada'
+       ) WHERE id=$1`,
+      [event_id]
     );
 
-    await client.query('COMMIT');
-    res.status(201).json(rows[0]);
-  } catch (err) {
-    await client.query('ROLLBACK');
-    console.error(err);
-    res.status(500).json({ error: err.message || 'Error al agregar pelea' });
-  } finally {
-    client.release();
+    res.json(rows[0]);
+  } catch (e) {
+    console.error('POST /api/event-matches/:eventId', e);
+    res.status(500).json({ error: 'Error al agregar pelea' });
   }
 });
 
-// -------------------------------------------------------
-// POST /api/event-matches/:matchId/result
-// Declarar resultado de una pelea
-// Body: { resultado: 'rojo' | 'verde' | 'tablas' }
-// -------------------------------------------------------
-router.post('/:matchId/result', requireAdminOrOperator, async (req, res) => {
-  const { matchId } = req.params;
-  const { resultado } = req.body;
-  const io = req.app.get('io');
+// POST /api/event-matches/:matchId/result — declarar resultado
+router.post('/:matchId/result', admin, async (req, res) => {
+  const matchId   = Number(req.params.matchId);
+  const resultado = String(req.body.resultado || '').toLowerCase();
 
   if (!['rojo', 'verde', 'tablas'].includes(resultado)) {
     return res.status(400).json({ error: 'resultado debe ser rojo, verde o tablas' });
@@ -141,225 +86,234 @@ router.post('/:matchId/result', requireAdminOrOperator, async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Traer la pelea actual con lock
     const matchQ = await client.query(
-      `SELECT em.*, e.room_id, e.numero_pelea_actual, e.total_peleas, e.estado AS event_estado
+      `SELECT em.*,
+              e.room_id, e.estado AS ev_estado,
+              e.numero_pelea_actual
        FROM event_matches em
        JOIN events e ON e.id = em.event_id
-       WHERE em.id = $1 FOR UPDATE`,
+       WHERE em.id=$1 FOR UPDATE`,
       [matchId]
     );
     const match = matchQ.rows[0];
-    if (!match) throw new Error('Pelea no encontrada');
-    if (match.estado === 'terminada' || match.estado === 'saltada') {
-      throw new Error('Esta pelea ya tiene resultado');
+    if (!match) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Pelea no encontrada' });
     }
-    if (match.event_estado !== 'activo') {
-      throw new Error('El evento no está activo');
+    if (match.ev_estado !== 'activo') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'El evento no esta activo' });
+    }
+    if (match.estado === 'terminada') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Esta pelea ya tiene resultado' });
     }
 
-    // Calcular puntos según resultado
-    let puntos_rojo  = 0;
-    let puntos_verde = 0;
-    let winner_side  = null;
+    // Puntos segun resultado
+    const pts = { rojo: 0, verde: 0 };
+    if (resultado === 'rojo')   { pts.rojo = 3; pts.verde = 0; }
+    if (resultado === 'verde')  { pts.rojo = 0; pts.verde = 3; }
+    if (resultado === 'tablas') { pts.rojo = 1; pts.verde = 1; }
 
-    if (resultado === 'rojo')   { puntos_rojo = 3; puntos_verde = 0; winner_side = 'R'; }
-    if (resultado === 'verde')  { puntos_rojo = 0; puntos_verde = 3; winner_side = 'V'; }
-    if (resultado === 'tablas') { puntos_rojo = 1; puntos_verde = 1; winner_side = null; }
-
-    // Actualizar la pelea
+    // Actualizar pelea
     await client.query(
       `UPDATE event_matches
-       SET estado      = 'terminada',
-           resultado   = $2,
-           winner_side = $3,
-           puntos_rojo  = $4,
-           puntos_verde = $5,
-           finished_at  = NOW()
-       WHERE id = $1`,
-      [matchId, resultado, winner_side, puntos_rojo, puntos_verde]
+       SET estado='terminada', resultado=$1,
+           puntos_rojo=$2, puntos_verde=$3, finished_at=NOW()
+       WHERE id=$4`,
+      [resultado, pts.rojo, pts.verde, matchId]
     );
 
-    // Registrar en bitácora
-    await client.query(
-      `INSERT INTO event_action_logs (event_id, match_id, room_id, user_id, action_type, payload)
-       VALUES ($1, $2, $3, $4, 'resultado_declarado', $5)`,
-      [match.event_id, matchId, match.room_id, req.user.id,
-       JSON.stringify({ resultado, puntos_rojo, puntos_verde })]
-    );
+    // Sumar puntos al equipo ganador — puntos van al EQUIPO no al color
+    if (resultado === 'rojo' && match.equipo_rojo_id) {
+      await client.query(
+        `UPDATE event_teams
+         SET puntos=puntos+3, ganadas=ganadas+1
+         WHERE id=$1`,
+        [match.equipo_rojo_id]
+      );
+      if (match.equipo_verde_id) {
+        await client.query(
+          `UPDATE event_teams SET perdidas=perdidas+1 WHERE id=$1`,
+          [match.equipo_verde_id]
+        );
+      }
+    } else if (resultado === 'verde' && match.equipo_verde_id) {
+      await client.query(
+        `UPDATE event_teams
+         SET puntos=puntos+3, ganadas=ganadas+1
+         WHERE id=$1`,
+        [match.equipo_verde_id]
+      );
+      if (match.equipo_rojo_id) {
+        await client.query(
+          `UPDATE event_teams SET perdidas=perdidas+1 WHERE id=$1`,
+          [match.equipo_rojo_id]
+        );
+      }
+    } else if (resultado === 'tablas') {
+      if (match.equipo_rojo_id) {
+        await client.query(
+          `UPDATE event_teams
+           SET puntos=puntos+1, empatadas=empatadas+1
+           WHERE id=$1`,
+          [match.equipo_rojo_id]
+        );
+      }
+      if (match.equipo_verde_id) {
+        await client.query(
+          `UPDATE event_teams
+           SET puntos=puntos+1, empatadas=empatadas+1
+           WHERE id=$1`,
+          [match.equipo_verde_id]
+        );
+      }
+    }
 
-    // Avanzar contador del evento
-    const nuevoNumero = match.numero_pelea_actual + 1;
-    await client.query(
-      `UPDATE events SET numero_pelea_actual = $1 WHERE id = $2`,
-      [nuevoNumero, match.event_id]
-    );
-
-    // Activar siguiente pelea (siguiente orden después del actual)
-    const siguienteQ = await client.query(
-      `UPDATE event_matches SET estado = 'lista'
-       WHERE event_id = $1
-         AND orden = (SELECT MIN(orden) FROM event_matches
-                      WHERE event_id = $1 AND estado = 'pendiente')
-       RETURNING *`,
+    // Activar siguiente pelea pendiente
+    const nextQ = await client.query(
+      `SELECT id FROM event_matches
+       WHERE event_id=$1 AND estado='pendiente'
+       ORDER BY orden ASC LIMIT 1`,
       [match.event_id]
     );
-    const siguientePelea = siguienteQ.rows[0] || null;
-
-    await client.query('COMMIT');
-
-    // Leer marcador actualizado
-    const scoresRes = await pool.query(
-      `SELECT side, team_name, puntos, ganadas, empatadas, perdidas
-       FROM v_event_team_scores WHERE event_id = $1`,
-      [match.event_id]
-    );
-
-    // Emitir socket a todos en la sala
-    io.to(`room_${match.room_id}`).emit('event:match_result', {
-      event_id:       match.event_id,
-      match_id:       Number(matchId),
-      resultado,
-      puntos_rojo,
-      puntos_verde,
-      numero_pelea:   match.numero_pelea,
-      siguiente:      siguientePelea,
-      scores:         scoresRes.rows
-    });
-
-    res.json({
-      ok: true,
-      resultado,
-      puntos_rojo,
-      puntos_verde,
-      siguiente: siguientePelea,
-      scores:    scoresRes.rows
-    });
-  } catch (err) {
-    await client.query('ROLLBACK');
-    console.error(err);
-    res.status(500).json({ error: err.message || 'Error al declarar resultado' });
-  } finally {
-    client.release();
-  }
-});
-
-// -------------------------------------------------------
-// POST /api/event-matches/:matchId/skip
-// Saltar una pelea (sin resultado)
-// Body: { motivo? }
-// -------------------------------------------------------
-router.post('/:matchId/skip', requireAdminOrOperator, async (req, res) => {
-  const { matchId } = req.params;
-  const { motivo } = req.body;
-  const io = req.app.get('io');
-
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    const matchQ = await client.query(
-      `SELECT em.*, e.room_id, e.estado AS event_estado
-       FROM event_matches em
-       JOIN events e ON e.id = em.event_id
-       WHERE em.id = $1 FOR UPDATE`,
-      [matchId]
-    );
-    const match = matchQ.rows[0];
-    if (!match) throw new Error('Pelea no encontrada');
-    if (match.estado === 'terminada') throw new Error('La pelea ya terminó, no se puede saltar');
-    if (match.event_estado !== 'activo') throw new Error('El evento no está activo');
-
-    await client.query(
-      `UPDATE event_matches
-       SET estado = 'saltada', skipped_reason = $2, finished_at = NOW()
-       WHERE id = $1`,
-      [matchId, motivo || null]
-    );
+    let siguiente = null;
+    if (nextQ.rows[0]) {
+      await client.query(
+        `UPDATE event_matches SET estado='lista' WHERE id=$1`,
+        [nextQ.rows[0].id]
+      );
+      siguiente = nextQ.rows[0].id;
+    }
 
     // Avanzar contador
     await client.query(
-      `UPDATE events SET numero_pelea_actual = numero_pelea_actual + 1 WHERE id = $1`,
+      `UPDATE events SET numero_pelea_actual=numero_pelea_actual+1 WHERE id=$1`,
       [match.event_id]
-    );
-
-    // Activar siguiente
-    const siguienteQ = await client.query(
-      `UPDATE event_matches SET estado = 'lista'
-       WHERE event_id = $1
-         AND orden = (SELECT MIN(orden) FROM event_matches
-                      WHERE event_id = $1 AND estado = 'pendiente')
-       RETURNING *`,
-      [match.event_id]
-    );
-    const siguientePelea = siguienteQ.rows[0] || null;
-
-    await client.query(
-      `INSERT INTO event_action_logs (event_id, match_id, room_id, user_id, action_type, payload)
-       VALUES ($1, $2, $3, $4, 'pelea_saltada', $5)`,
-      [match.event_id, matchId, match.room_id, req.user.id,
-       JSON.stringify({ motivo: motivo || null })]
     );
 
     await client.query('COMMIT');
 
-    io.to(`room_${match.room_id}`).emit('event:match_skipped', {
-      event_id:  match.event_id,
-      match_id:  Number(matchId),
-      siguiente: siguientePelea
-    });
+    // Emitir socket
+    const sockets = req.app.get('sockets');
+    const roomQ   = await pool.query('SELECT slug FROM rooms WHERE id=$1', [match.room_id]);
+    if (sockets && roomQ.rows[0]) {
+      sockets.emitMatchResult(roomQ.rows[0].slug, {
+        event_id:     match.event_id,
+        match_id:     matchId,
+        resultado,
+        puntos_rojo:  pts.rojo,
+        puntos_verde: pts.verde,
+        numero_pelea: match.numero_pelea,
+        siguiente
+      });
+    }
 
-    res.json({ ok: true, siguiente: siguientePelea });
-  } catch (err) {
+    res.json({ ok: true, resultado, puntos_rojo: pts.rojo, puntos_verde: pts.verde, siguiente });
+  } catch (e) {
     await client.query('ROLLBACK');
-    console.error(err);
-    res.status(500).json({ error: err.message || 'Error al saltar pelea' });
+    console.error('POST /api/event-matches/:matchId/result', e);
+    res.status(500).json({ error: 'Error al declarar resultado' });
   } finally {
     client.release();
   }
 });
 
-// -------------------------------------------------------
-// DELETE /api/event-matches/:matchId
-// Eliminar pelea de la cartelera (solo si evento está programado)
-// -------------------------------------------------------
-router.delete('/:matchId', requireAdminOrOperator, async (req, res) => {
-  const { matchId } = req.params;
-  const client = await pool.connect();
+// POST /api/event-matches/:matchId/skip — poner en espera (recuperable)
+router.post('/:matchId/skip', admin, async (req, res) => {
+  const matchId = Number(req.params.matchId);
   try {
-    await client.query('BEGIN');
-
-    const matchQ = await client.query(
-      `SELECT em.event_id, e.estado AS event_estado
-       FROM event_matches em
+    const matchQ = await pool.query(
+      `SELECT em.*, e.room_id FROM event_matches em
        JOIN events e ON e.id = em.event_id
-       WHERE em.id = $1 FOR UPDATE`,
+       WHERE em.id=$1`,
       [matchId]
     );
-    const match = matchQ.rows[0];
-    if (!match) throw new Error('Pelea no encontrada');
-    if (match.event_estado !== 'programado') {
-      throw new Error('Solo se pueden eliminar peleas de eventos aún no iniciados');
+    if (!matchQ.rows[0]) return res.status(404).json({ error: 'Pelea no encontrada' });
+    if (matchQ.rows[0].estado === 'terminada') {
+      return res.status(400).json({ error: 'No puedes saltar una pelea ya terminada' });
     }
 
-    await client.query(`DELETE FROM event_matches WHERE id = $1`, [matchId]);
-
-    // Recalcular total_peleas
-    await client.query(
-      `UPDATE events SET total_peleas = (
-         SELECT COUNT(*) FROM event_matches WHERE event_id = $1
-       ) WHERE id = $1`,
-      [match.event_id]
+    // Poner en espera — NO es estado final, se puede recuperar
+    await pool.query(
+      `UPDATE event_matches SET estado='en_espera' WHERE id=$1`, [matchId]
     );
 
-    await client.query('COMMIT');
+    // Activar siguiente pendiente
+    const next = await pool.query(
+      `SELECT id FROM event_matches
+       WHERE event_id=$1 AND estado='pendiente'
+       ORDER BY orden ASC LIMIT 1`,
+      [matchQ.rows[0].event_id]
+    );
+    if (next.rows[0]) {
+      await pool.query(
+        `UPDATE event_matches SET estado='lista' WHERE id=$1`, [next.rows[0].id]
+      );
+    }
+
     res.json({ ok: true });
-  } catch (err) {
-    await client.query('ROLLBACK');
-    console.error(err);
-    res.status(500).json({ error: err.message || 'Error al eliminar pelea' });
-  } finally {
-    client.release();
+  } catch (e) {
+    console.error('POST /api/event-matches/:matchId/skip', e);
+    res.status(500).json({ error: 'Error al saltar pelea' });
+  }
+});
+
+// POST /api/event-matches/:matchId/reactivate — recuperar pelea en espera
+router.post('/:matchId/reactivate', admin, async (req, res) => {
+  const matchId = Number(req.params.matchId);
+  try {
+    const matchQ = await pool.query(
+      `SELECT * FROM event_matches WHERE id=$1`, [matchId]
+    );
+    if (!matchQ.rows[0]) return res.status(404).json({ error: 'Pelea no encontrada' });
+    if (matchQ.rows[0].estado !== 'en_espera') {
+      return res.status(400).json({ error: 'Solo puedes reactivar peleas en espera' });
+    }
+
+    // Verificar si hay pelea activa actualmente
+    const current = await pool.query(
+      `SELECT id FROM event_matches
+       WHERE event_id=$1 AND estado IN ('lista','apostando','en_vivo')
+       LIMIT 1`,
+      [matchQ.rows[0].event_id]
+    );
+
+    if (current.rows[0]) {
+      // Ya hay una pelea activa — poner esta como pendiente para que juegue despues
+      await pool.query(
+        `UPDATE event_matches SET estado='pendiente' WHERE id=$1`, [matchId]
+      );
+      return res.json({ ok: true, mensaje: 'Pelea puesta como pendiente, jugara despues de la actual' });
+    }
+
+    // No hay pelea activa — activar esta directamente
+    await pool.query(
+      `UPDATE event_matches SET estado='lista' WHERE id=$1`, [matchId]
+    );
+    res.json({ ok: true, mensaje: 'Pelea reactivada como siguiente' });
+  } catch (e) {
+    console.error('POST /api/event-matches/:matchId/reactivate', e);
+    res.status(500).json({ error: 'Error al reactivar pelea' });
+  }
+});
+
+// DELETE /api/event-matches/:matchId
+router.delete('/:matchId', admin, async (req, res) => {
+  const matchId = Number(req.params.matchId);
+  try {
+    const { rows } = await pool.query(
+      `DELETE FROM event_matches
+       WHERE id=$1 AND estado='pendiente'
+       RETURNING id`,
+      [matchId]
+    );
+    if (!rows.length) {
+      return res.status(400).json({ error: 'Solo puedes eliminar peleas pendientes' });
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Error al eliminar pelea' });
   }
 });
 

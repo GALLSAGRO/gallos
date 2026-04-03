@@ -1,259 +1,232 @@
-const express = require('express');
-const router = express.Router();
-const pool = require('../models/db');
+const router = require('express').Router();
+const pool   = require('../models/db');
+const admin  = require('../middleware/admin');
 
-function requireAdminOrOperator(req, res, next) {
-  const role = req.user?.role;
-  if (role !== 'admin' && role !== 'operator' && !req.user?.is_admin) {
-    return res.status(403).json({ error: 'Sin permisos' });
-  }
-  next();
-}
-
-// -------------------------------------------------------
 // GET /api/events/rooms
-// Lista salas activas para el selector del panel admin
-// -------------------------------------------------------
-router.get('/rooms', requireAdminOrOperator, async (req, res) => {
+router.get('/rooms', admin, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, slug, nombre FROM rooms WHERE activos = TRUE ORDER BY nombre`
+      `SELECT id, slug, nombre, activos FROM rooms ORDER BY nombre ASC`
     );
     res.json(rows);
-  } catch (err) {
-    console.error(err);
+  } catch (e) {
+    console.error('GET /api/events/rooms', e);
     res.status(500).json({ error: 'Error al obtener salas' });
   }
 });
 
-// -------------------------------------------------------
 // GET /api/events?room_id=X
-// Lista eventos de una sala
-// -------------------------------------------------------
-router.get('/', requireAdminOrOperator, async (req, res) => {
-  const { room_id } = req.query;
+router.get('/', admin, async (req, res) => {
+  const room_id = Number(req.query.room_id);
   if (!room_id) return res.status(400).json({ error: 'room_id requerido' });
-
   try {
     const { rows } = await pool.query(
-      `SELECT id, nombre, fecha_evento, estado, numero_pelea_actual, total_peleas, started_at, finished_at
+      `SELECT id, room_id, nombre, fecha_evento, estado,
+              numero_pelea_actual, total_peleas,
+              equipo_rojo, equipo_verde,
+              started_at, finished_at, created_at
        FROM events
        WHERE room_id = $1
-       ORDER BY created_at DESC
-       LIMIT 20`,
+       ORDER BY created_at DESC`,
       [room_id]
     );
     res.json(rows);
-  } catch (err) {
-    console.error(err);
+  } catch (e) {
+    console.error('GET /api/events', e);
     res.status(500).json({ error: 'Error al obtener eventos' });
   }
 });
 
-// -------------------------------------------------------
 // GET /api/events/:id
-// Detalle completo del evento (equipos + cartelera + marcador)
-// -------------------------------------------------------
-router.get('/:id', requireAdminOrOperator, async (req, res) => {
-  const { id } = req.params;
+router.get('/:id', async (req, res) => {
+  const id = Number(req.params.id);
   try {
-    const evRes = await pool.query(
-      `SELECT e.*, r.nombre AS sala_nombre
-       FROM events e
-       JOIN rooms r ON r.id = e.room_id
-       WHERE e.id = $1`,
-      [id]
-    );
-    if (!evRes.rows[0]) return res.status(404).json({ error: 'Evento no encontrado' });
-
-    const teamsRes = await pool.query(
-      `SELECT id, side, nombre, capitan FROM event_teams WHERE event_id = $1 ORDER BY side`,
-      [id]
-    );
-
-    const matchesRes = await pool.query(
-      `SELECT id, numero_pelea, orden, gallo_rojo, gallo_verde,
-              estado, resultado, puntos_rojo, puntos_verde,
+    const evQ = await pool.query(
+      `SELECT id, room_id, nombre, fecha_evento, estado,
+              numero_pelea_actual, total_peleas,
+              equipo_rojo, equipo_verde,
               started_at, finished_at
-       FROM event_matches
-       WHERE event_id = $1
-       ORDER BY orden ASC`,
+       FROM events WHERE id = $1`,
+      [id]
+    );
+    if (!evQ.rows[0]) return res.status(404).json({ error: 'Evento no encontrado' });
+
+    const matches = await pool.query(
+      `SELECT em.id, em.numero_pelea, em.orden, em.gallo_rojo, em.gallo_verde,
+              em.estado, em.resultado, em.puntos_rojo, em.puntos_verde,
+              em.equipo_rojo_id, em.equipo_verde_id, em.finished_at,
+              tr.nombre AS nombre_equipo_rojo,
+              tv.nombre AS nombre_equipo_verde
+       FROM event_matches em
+       LEFT JOIN event_teams tr ON tr.id = em.equipo_rojo_id
+       LEFT JOIN event_teams tv ON tv.id = em.equipo_verde_id
+       WHERE em.event_id = $1
+       ORDER BY em.orden ASC`,
       [id]
     );
 
-    const scoresRes = await pool.query(
-      `SELECT side, team_name, puntos, ganadas, empatadas, perdidas
-       FROM v_event_team_scores
-       WHERE event_id = $1`,
+    const teams = await pool.query(
+      `SELECT id, nombre, side, capitan,
+              puntos, ganadas, empatadas, perdidas
+       FROM event_teams
+       WHERE event_id = $1
+       ORDER BY puntos DESC, ganadas DESC, nombre ASC`,
       [id]
     );
 
     res.json({
-      event:   evRes.rows[0],
-      teams:   teamsRes.rows,
-      matches: matchesRes.rows,
-      scores:  scoresRes.rows
+      event:   evQ.rows[0],
+      matches: matches.rows,
+      teams:   teams.rows
     });
-  } catch (err) {
-    console.error(err);
+  } catch (e) {
+    console.error('GET /api/events/:id', e);
     res.status(500).json({ error: 'Error al obtener evento' });
   }
 });
 
-// -------------------------------------------------------
 // POST /api/events
-// Crear evento nuevo
-// Body: { room_id, nombre, fecha_evento, total_peleas, notas,
-//         equipo_rojo: { nombre, capitan },
-//         equipo_verde: { nombre, capitan } }
-// -------------------------------------------------------
-router.post('/', requireAdminOrOperator, async (req, res) => {
-  const { room_id, nombre, fecha_evento, total_peleas, notas, equipo_rojo, equipo_verde } = req.body;
-
+router.post('/', admin, async (req, res) => {
+  const { room_id, nombre, fecha_evento, total_peleas, notas } = req.body;
   if (!room_id || !nombre || !fecha_evento) {
-    return res.status(400).json({ error: 'room_id, nombre y fecha_evento son requeridos' });
+    return res.status(400).json({ error: 'room_id, nombre y fecha_evento son obligatorios' });
   }
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO events
+         (room_id, nombre, fecha_evento, total_peleas, notas, estado, numero_pelea_actual)
+       VALUES ($1,$2,$3,$4,$5,'programado',0)
+       RETURNING *`,
+      [room_id, nombre, fecha_evento, total_peleas || 0, notas || null]
+    );
+    res.json(rows[0]);
+  } catch (e) {
+    console.error('POST /api/events', e);
+    res.status(500).json({ error: 'Error al crear evento' });
+  }
+});
 
+// POST /api/events/:id/teams — registrar equipo
+router.post('/:id/teams', admin, async (req, res) => {
+  const event_id = Number(req.params.id);
+  const { nombre, side, capitan } = req.body;
+  if (!nombre) return res.status(400).json({ error: 'nombre es obligatorio' });
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO event_teams (event_id, nombre, side, capitan, puntos, ganadas, empatadas, perdidas)
+       VALUES ($1,$2,$3,$4,0,0,0,0) RETURNING *`,
+      [event_id, nombre.trim(), side || null, capitan || null]
+    );
+    res.json(rows[0]);
+  } catch (e) {
+    console.error('POST /api/events/:id/teams', e);
+    res.status(500).json({ error: 'Error al registrar equipo' });
+  }
+});
+
+// DELETE /api/events/:id/teams/:teamId
+router.delete('/:id/teams/:teamId', admin, async (req, res) => {
+  try {
+    await pool.query(
+      `DELETE FROM event_teams WHERE id=$1 AND event_id=$2`,
+      [Number(req.params.teamId), Number(req.params.id)]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Error al eliminar equipo' });
+  }
+});
+
+// POST /api/events/:id/start
+router.post('/:id/start', admin, async (req, res) => {
+  const id = Number(req.params.id);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    const evRes = await client.query(
-      `INSERT INTO events (room_id, nombre, fecha_evento, total_peleas, notas, estado, created_by)
-       VALUES ($1, $2, $3, $4, $5, 'programado', $6)
-       RETURNING *`,
-      [room_id, nombre, fecha_evento, total_peleas || 0, notas || null, req.user.id]
+    const evQ = await client.query(
+      `SELECT id, room_id, estado FROM events WHERE id=$1 FOR UPDATE`, [id]
     );
-    const event = evRes.rows[0];
-
-    if (equipo_rojo?.nombre) {
-      await client.query(
-        `INSERT INTO event_teams (event_id, side, nombre, capitan) VALUES ($1, 'R', $2, $3)`,
-        [event.id, equipo_rojo.nombre, equipo_rojo.capitan || null]
-      );
+    const ev = evQ.rows[0];
+    if (!ev) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Evento no encontrado' });
     }
-    if (equipo_verde?.nombre) {
-      await client.query(
-        `INSERT INTO event_teams (event_id, side, nombre, capitan) VALUES ($1, 'V', $2, $3)`,
-        [event.id, equipo_verde.nombre, equipo_verde.capitan || null]
-      );
+    if (ev.estado !== 'programado') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'El evento no esta en estado programado' });
     }
 
+    const activo = await client.query(
+      `SELECT id FROM events WHERE room_id=$1 AND estado='activo'`, [ev.room_id]
+    );
+    if (activo.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Ya hay un evento activo en esta sala' });
+    }
+
+    const firstMatch = await client.query(
+      `SELECT id FROM event_matches
+       WHERE event_id=$1 AND estado='pendiente'
+       ORDER BY orden ASC LIMIT 1`,
+      [id]
+    );
+    if (firstMatch.rows[0]) {
+      await client.query(
+        `UPDATE event_matches SET estado='lista' WHERE id=$1`,
+        [firstMatch.rows[0].id]
+      );
+    }
+
+    const { rows } = await client.query(
+      `UPDATE events
+       SET estado='activo', numero_pelea_actual=1, started_at=NOW()
+       WHERE id=$1 RETURNING *`,
+      [id]
+    );
     await client.query('COMMIT');
-    res.status(201).json(event);
-  } catch (err) {
+
+    const sockets = req.app.get('sockets');
+    const roomQ   = await pool.query('SELECT slug FROM rooms WHERE id=$1', [ev.room_id]);
+    if (sockets && roomQ.rows[0]) {
+      sockets.emitEventStarted(roomQ.rows[0].slug, rows[0]);
+    }
+
+    res.json(rows[0]);
+  } catch (e) {
     await client.query('ROLLBACK');
-    console.error(err);
-    res.status(500).json({ error: 'Error al crear evento' });
+    console.error('POST /api/events/:id/start', e);
+    res.status(500).json({ error: 'Error al iniciar evento' });
   } finally {
     client.release();
   }
 });
 
-// -------------------------------------------------------
-// POST /api/events/:id/start
-// Iniciar evento programado → activo
-// -------------------------------------------------------
-router.post('/:id/start', requireAdminOrOperator, async (req, res) => {
-  const { id } = req.params;
-  const io = req.app.get('io');
-
-  try {
-    const { rows } = await pool.query(
-      `UPDATE events
-       SET estado = 'activo', started_at = NOW(), numero_pelea_actual = 1
-       WHERE id = $1 AND estado = 'programado'
-       RETURNING *`,
-      [id]
-    );
-    if (!rows[0]) return res.status(400).json({ error: 'El evento no existe o ya está activo/finalizado' });
-
-    const event = rows[0];
-
-    // Primera pelea pasa a 'lista'
-    await pool.query(
-      `UPDATE event_matches SET estado = 'lista'
-       WHERE event_id = $1 AND orden = 1 AND estado = 'pendiente'`,
-      [id]
-    );
-
-    io.to(`room_${event.room_id}`).emit('event:started', {
-      event_id: event.id,
-      room_id:  event.room_id
-    });
-
-    res.json({ ok: true, event });
-  } catch (err) {
-    console.error(err);
-    if (err.code === '23505') {
-      return res.status(409).json({ error: 'Ya existe un evento activo en esta sala' });
-    }
-    res.status(500).json({ error: 'Error al iniciar evento' });
-  }
-});
-
-// -------------------------------------------------------
 // POST /api/events/:id/finish
-// Cerrar evento activo → finalizado (NO toca la sala)
-// -------------------------------------------------------
-router.post('/:id/finish', requireAdminOrOperator, async (req, res) => {
-  const { id } = req.params;
-  const io = req.app.get('io');
-
+router.post('/:id/finish', admin, async (req, res) => {
+  const id = Number(req.params.id);
   try {
-    const { rows } = await pool.query(
-      `UPDATE events
-       SET estado = 'finalizado', finished_at = NOW()
-       WHERE id = $1 AND estado = 'activo'
-       RETURNING *`,
-      [id]
+    const evQ = await pool.query(
+      `SELECT id, room_id FROM events WHERE id=$1`, [id]
     );
-    if (!rows[0]) return res.status(400).json({ error: 'El evento no está activo' });
+    if (!evQ.rows[0]) return res.status(404).json({ error: 'Evento no encontrado' });
 
-    const event = rows[0];
-
-    // Cancelar peleas que no se jugaron
-    await pool.query(
-      `UPDATE event_matches SET estado = 'cancelada'
-       WHERE event_id = $1 AND estado IN ('pendiente', 'lista')`,
+    const { rows } = await pool.query(
+      `UPDATE events SET estado='finalizado', finished_at=NOW()
+       WHERE id=$1 RETURNING *`,
       [id]
     );
 
-    io.to(`room_${event.room_id}`).emit('event:finished', {
-      event_id: event.id,
-      room_id:  event.room_id
-    });
+    const sockets = req.app.get('sockets');
+    const roomQ   = await pool.query('SELECT slug FROM rooms WHERE id=$1', [evQ.rows[0].room_id]);
+    if (sockets && roomQ.rows[0]) {
+      sockets.emitEventFinished(roomQ.rows[0].slug, rows[0]);
+    }
 
-    res.json({ ok: true, event });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error al finalizar evento' });
-  }
-});
-
-// -------------------------------------------------------
-// PATCH /api/events/:id
-// Editar evento (solo si está programado)
-// -------------------------------------------------------
-router.patch('/:id', requireAdminOrOperator, async (req, res) => {
-  const { id } = req.params;
-  const { nombre, notas, total_peleas } = req.body;
-
-  try {
-    const { rows } = await pool.query(
-      `UPDATE events
-       SET nombre      = COALESCE($1, nombre),
-           notas       = COALESCE($2, notas),
-           total_peleas = COALESCE($3, total_peleas)
-       WHERE id = $4 AND estado = 'programado'
-       RETURNING *`,
-      [nombre || null, notas || null, total_peleas || null, id]
-    );
-    if (!rows[0]) return res.status(400).json({ error: 'Evento no encontrado o ya no es editable' });
     res.json(rows[0]);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error al editar evento' });
+  } catch (e) {
+    console.error('POST /api/events/:id/finish', e);
+    res.status(500).json({ error: 'Error al finalizar evento' });
   }
 });
 
