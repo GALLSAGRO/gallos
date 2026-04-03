@@ -32,19 +32,20 @@ async function api(url, opts = {}) {
 
 async function refreshMe() {
   const data = await api('/api/me');
+
   user = data;
   localStorage.setItem('user', JSON.stringify(user));
 
-  document.getElementById('navUser').textContent = user.username;
-  document.getElementById('navPuntos').textContent = user.puntos + ' pts';
-  document.getElementById('saldoMini').textContent = user.puntos + ' pts';
+  document.getElementById('navUser').textContent = user.username || 'Usuario';
+  document.getElementById('navPuntos').textContent = (user.puntos || 0) + ' pts';
+  document.getElementById('saldoMini').textContent = (user.puntos || 0) + ' pts';
 
-  if (user.is_admin) {
+  if (user.isadmin) {
     document.getElementById('adminLink').style.display = 'inline-block';
   }
 }
 
-// ── Salas ─────────────────────────────────────────────────────────────────────
+/* ── Salas ─────────────────────────────────────────────────────────────── */
 async function loadRooms() {
   const rooms = await api('/api/rooms');
   const list = document.getElementById('roomList');
@@ -55,9 +56,9 @@ async function loadRooms() {
   }
 
   list.innerHTML = rooms.map(r => `
-    <div class="room-card" onclick="enterRoom('${escapeAttr(r.slug)}', \`${(r.facebook_live_url || '').replace(/`/g, '\\`')}\`)">
+    <div class="room-card" onclick="enterRoom('${escapeAttr(r.slug)}', \`${String(r.facebookliveurl || '').replace(/`/g, '\\`')}\`)">
       <h3>${escapeHtml(r.nombre)}</h3>
-      <p>${r.activo ? 'En vivo' : 'Cerrado'}</p>
+      <p>${r.activos ? 'En vivo' : 'Cerrado'}</p>
     </div>
   `).join('');
 }
@@ -82,7 +83,11 @@ async function enterRoom(slug, liveUrl) {
 }
 
 function backToRooms() {
-  if (socket) socket.disconnect();
+  if (socket) {
+    socket.emit('leave-room', { roomSlug: currentRoom });
+    socket.disconnect();
+    socket = null;
+  }
 
   currentRoom = null;
   currentFight = null;
@@ -95,43 +100,54 @@ function backToRooms() {
   document.getElementById('chatMessages').innerHTML = '';
   document.getElementById('betsActivas').innerHTML = '';
   document.getElementById('betsHistorial').innerHTML = '';
-  document.getElementById('fightTitleStage').textContent = 'Sin pelea activa';
-  document.getElementById('noFight').style.display = 'block';
-  document.getElementById('fightCard').style.display = 'none';
-  document.getElementById('betForm').style.display = 'none';
-  document.getElementById('betClosed').style.display = 'block';
-  document.getElementById('resultBanner').style.display = 'none';
   document.getElementById('chatRoomName').textContent = '';
-  updateEstadoBadge('apostando');
-  document.getElementById('estadoBadge').textContent = 'Sin estado';
-  document.getElementById('estadoBadge').className = 'estado-badge';
+
+  renderNoFight();
 }
 
-// ── Socket ────────────────────────────────────────────────────────────────────
+/* ── Socket ────────────────────────────────────────────────────────────── */
 function connectSocket(roomSlug) {
-  if (socket) socket.disconnect();
+  if (socket) {
+    socket.disconnect();
+    socket = null;
+  }
 
   socket = io({ auth: { token } });
-  socket.emit('join-room', { roomSlug });
 
-  socket.on('room-state', ({ fight, pool: poolData }) => {
+  socket.on('connect', () => {
+    socket.emit('join-room', { roomSlug });
+  });
+
+  socket.on('room-state', ({ room, fight, pool, historial }) => {
+    if (room?.facebookliveurl) {
+      document.getElementById('liveFrame').src = room.facebookliveurl;
+    }
+
     if (fight) {
       renderFight(fight);
-      renderPool(poolData || []);
+      renderPool(pool || []);
     } else {
       renderNoFight();
       renderPool([]);
     }
+
+    if (historial) {
+      renderHistorial(historial);
+    }
   });
 
-  socket.on('fight-created', (fight) => {
-    renderFight(fight);
-    renderPool([]);
-    showNotificacion('Nueva pelea disponible');
+  socket.on('fight-created', ({ fight, message }) => {
+    if (fight) {
+      renderFight(fight);
+      renderPool([]);
+    }
+    showNotificacion(message || 'Nueva pelea disponible');
   });
 
-  socket.on('fight-updated', ({ fightId, estado }) => {
-    if (currentFight && currentFight.id == fightId) {
+  socket.on('fight-updated', ({ fightId, estado, fight, pool, historial, message }) => {
+    if (fight) {
+      renderFight(fight);
+    } else if (currentFight && String(currentFight.id) === String(fightId)) {
       currentFight.estado = estado;
       updateEstadoBadge(estado);
 
@@ -139,39 +155,68 @@ function connectSocket(roomSlug) {
       document.getElementById('betForm').style.display = open ? 'block' : 'none';
       document.getElementById('betClosed').style.display = open ? 'none' : 'block';
 
-      if (estado === 'en_vivo') {
-        showNotificacion('Apuestas cerradas');
+      if (!open) {
+        document.getElementById('betClosed').textContent =
+          estado === 'envivo'
+            ? 'La pelea está en vivo. Las apuestas están cerradas.'
+            : 'La pelea ha finalizado.';
       }
+    }
+
+    if (pool) renderPool(pool);
+    if (historial) renderHistorial(historial);
+    if (message) showNotificacion(message);
+  });
+
+  socket.on('bet-placed', ({ pool, me }) => {
+    renderPool(pool || []);
+
+    if (me?.puntos != null) {
+      user.puntos = me.puntos;
+      localStorage.setItem('user', JSON.stringify(user));
+      document.getElementById('navPuntos').textContent = me.puntos + ' pts';
+      document.getElementById('saldoMini').textContent = me.puntos + ' pts';
     }
   });
 
-  socket.on('bet-placed', ({ pool: poolData }) => {
-    renderPool(poolData || []);
-  });
+  socket.on('fight-result', ({ fight, historial, message }) => {
+    currentFight = fight || null;
 
-  socket.on('fight-result', ({ fight }) => {
-    currentFight = fight;
+    if (!fight) {
+      renderNoFight();
+      return;
+    }
+
     updateEstadoBadge('terminada');
-
     document.getElementById('betForm').style.display = 'none';
     document.getElementById('betClosed').style.display = 'block';
+    document.getElementById('betClosed').textContent = 'La pelea ha finalizado.';
 
     const banner = document.getElementById('resultBanner');
-    const winnerName = fight.ganador === 'A'
-      ? document.getElementById('btnA').textContent
-      : document.getElementById('btnB').textContent;
 
-    banner.textContent = 'Ganador: ' + winnerName;
-    banner.className = 'result-banner ' + (fight.ganador === 'A' ? 'banner-rojo' : 'banner-verde');
+    if (fight.ganador === 'TABLAS') {
+      banner.textContent = 'Resultado: Tablas';
+      banner.className = 'result-banner';
+    } else {
+      const winnerName = fight.ganador === 'A' ? fight.galloa : fight.gallob;
+      banner.textContent = 'Ganador: ' + winnerName;
+      banner.className = 'result-banner ' + (fight.ganador === 'A' ? 'banner-rojo' : 'banner-verde');
+    }
+
     banner.style.display = 'block';
+
+    if (historial) {
+      renderHistorial(historial);
+    }
 
     refreshMe();
     loadMyBets();
-    showNotificacion('Resultado actualizado');
+    showNotificacion(message || 'Resultado actualizado');
   });
 
-  socket.on('historial', (peleas) => {
-    renderHistorial(peleas || []);
+  socket.on('historial', (payload) => {
+    const peleas = Array.isArray(payload) ? payload : (payload?.peleas || []);
+    renderHistorial(peleas);
   });
 
   socket.on('chat-message', ({ username, message, system }) => {
@@ -185,9 +230,14 @@ function connectSocket(roomSlug) {
     document.getElementById('saldoMini').textContent = puntos + ' pts';
     loadMyBets();
   });
+
+  socket.on('room-closed', ({ message }) => {
+    renderNoFight();
+    if (message) showNotificacion(message);
+  });
 }
 
-// ── Render pelea ──────────────────────────────────────────────────────────────
+/* ── Render pelea ──────────────────────────────────────────────────────── */
 function renderNoFight() {
   currentFight = null;
   selectedGallo = null;
@@ -199,6 +249,7 @@ function renderNoFight() {
   document.getElementById('betClosed').style.display = 'block';
   document.getElementById('betClosed').textContent = 'Las apuestas aparecerán aquí cuando la pelea esté en estado de apuesta.';
   document.getElementById('resultBanner').style.display = 'none';
+
   document.getElementById('btnA').textContent = '—';
   document.getElementById('btnB').textContent = '—';
   document.getElementById('btnASelect').textContent = 'Rojo';
@@ -217,11 +268,11 @@ function renderFight(fight) {
   currentFight = fight;
   selectedGallo = null;
 
-  document.getElementById('fightTitleStage').textContent = fight.gallo_a + ' vs ' + fight.gallo_b;
-  document.getElementById('btnA').textContent = fight.gallo_a;
-  document.getElementById('btnB').textContent = fight.gallo_b;
-  document.getElementById('btnASelect').textContent = fight.gallo_a;
-  document.getElementById('btnBSelect').textContent = fight.gallo_b;
+  document.getElementById('fightTitleStage').textContent = `${fight.galloa} vs ${fight.gallob}`;
+  document.getElementById('btnA').textContent = fight.galloa;
+  document.getElementById('btnB').textContent = fight.gallob;
+  document.getElementById('btnASelect').textContent = fight.galloa;
+  document.getElementById('btnBSelect').textContent = fight.gallob;
 
   document.getElementById('noFight').style.display = 'none';
   document.getElementById('fightCard').style.display = 'block';
@@ -234,9 +285,10 @@ function renderFight(fight) {
   document.getElementById('betClosed').style.display = open ? 'none' : 'block';
 
   if (!open) {
-    document.getElementById('betClosed').textContent = fight.estado === 'en_vivo'
-      ? 'La pelea está en vivo. Las apuestas están cerradas.'
-      : 'La pelea ha finalizado.';
+    document.getElementById('betClosed').textContent =
+      fight.estado === 'envivo'
+        ? 'La pelea está en vivo. Las apuestas están cerradas.'
+        : 'La pelea ha finalizado.';
   }
 
   document.getElementById('btnASelect').classList.remove('selected');
@@ -248,7 +300,7 @@ function updateEstadoBadge(estado) {
   const badge = document.getElementById('estadoBadge');
   const labels = {
     apostando: 'Apostando',
-    en_vivo: 'En vivo',
+    envivo: 'En vivo',
     terminada: 'Terminada'
   };
 
@@ -264,23 +316,23 @@ function renderPool(poolData) {
 
   poolData.forEach(p => {
     if (p.gallo === 'A') totalA = Number(p.total);
-    else totalB = Number(p.total);
+    else if (p.gallo === 'B') totalB = Number(p.total);
   });
 
   const total = totalA + totalB;
   const pctA = total > 0 ? Math.round((totalA / total) * 100) : 50;
   const pctB = 100 - pctA;
 
-  document.getElementById('poolA').textContent = totalA + ' pts · ' + pctA + '%';
-  document.getElementById('poolB').textContent = totalB + ' pts · ' + pctB + '%';
+  document.getElementById('poolA').textContent = `${totalA} pts · ${pctA}%`;
+  document.getElementById('poolB').textContent = `${totalB} pts · ${pctB}%`;
 }
 
-// ── Historial ─────────────────────────────────────────────────────────────────
+/* ── Historial ─────────────────────────────────────────────────────────── */
 function renderHistorial(peleas) {
   const el = document.getElementById('historialList');
 
   if (!peleas.length) {
-    el.innerHTML = '<p class="no-data">Sin peleas registradas en este evento</p>';
+    el.innerHTML = '<p class="no-data">Sin peleas registradas en esta sala</p>';
     return;
   }
 
@@ -298,22 +350,24 @@ function renderHistorial(peleas) {
       <tbody>
         ${peleas.map((p, i) => {
           const ganadorName = p.ganador === 'A'
-            ? `<span class="gallo-rojo">${escapeHtml(p.gallo_a)}</span>`
+            ? `<span class="gallo-rojo">${escapeHtml(p.galloa)}</span>`
             : p.ganador === 'B'
-              ? `<span class="gallo-verde">${escapeHtml(p.gallo_b)}</span>`
-              : '-';
+              ? `<span class="gallo-verde">${escapeHtml(p.gallob)}</span>`
+              : p.ganador === 'TABLAS'
+                ? 'Tablas'
+                : '-';
 
           const estadoClass = {
             apostando: 'estado-apostando',
-            en_vivo: 'estado-en_vivo',
+            envivo: 'estado-envivo',
             terminada: 'estado-terminada'
           }[p.estado] || '';
 
           return `
             <tr>
               <td>${peleas.length - i}</td>
-              <td class="gallo-rojo">${escapeHtml(p.gallo_a)}</td>
-              <td class="gallo-verde">${escapeHtml(p.gallo_b)}</td>
+              <td class="gallo-rojo">${escapeHtml(p.galloa)}</td>
+              <td class="gallo-verde">${escapeHtml(p.gallob)}</td>
               <td>
                 <span class="estado-badge ${estadoClass}" style="font-size:.74rem;padding:4px 10px">
                   ${escapeHtml(p.estado)}
@@ -328,7 +382,7 @@ function renderHistorial(peleas) {
   `;
 }
 
-// ── Apuestas ──────────────────────────────────────────────────────────────────
+/* ── Apuestas ──────────────────────────────────────────────────────────── */
 function selectGallo(g) {
   selectedGallo = g;
   document.getElementById('btnASelect').classList.toggle('selected', g === 'A');
@@ -343,23 +397,25 @@ async function placeBet() {
   if (!currentFight) return showBetMsg('No hay pelea activa', 'error');
   if (!selectedGallo) return showBetMsg('Selecciona un gallo', 'error');
 
-  const puntos = parseInt(document.getElementById('betAmount').value);
+  const puntos = parseInt(document.getElementById('betAmount').value, 10);
   if (!puntos || puntos <= 0) return showBetMsg('Ingresa un monto válido', 'error');
 
   const res = await api('/api/bets', {
     method: 'POST',
     body: JSON.stringify({
-      room_id: currentFight.room_id,
-      pelea_id: currentFight.id,
+      roomid: currentFight.roomid,
+      peleaid: currentFight.id,
       gallo: selectedGallo,
       puntos
     })
   });
 
-  if (!res.ok) return showBetMsg(res.error || 'No se pudo registrar la apuesta', 'error');
+  if (!res.ok) {
+    return showBetMsg(res.error || 'No se pudo registrar la apuesta', 'error');
+  }
 
   const unmatchedMsg = res.unmatched > 0
-    ? ' (' + res.unmatched + ' pts en espera de contrincante)'
+    ? ` (${res.unmatched} pts en espera de contrincante)`
     : '';
 
   showBetMsg('Apuesta registrada' + unmatchedMsg, 'success');
@@ -397,19 +453,21 @@ function renderBetsTable(elId, bets, emptyMsg) {
       </thead>
       <tbody>
         ${bets.map(b => {
-          const galloName = b.gallo === 'A' ? b.gallo_a : b.gallo_b;
+          const galloName = b.gallo === 'A' ? b.galloa : b.gallob;
           const galloClass = b.gallo === 'A' ? 'gallo-rojo' : 'gallo-verde';
           const ganoBadge = b.ganador
             ? b.ganador === b.gallo
               ? '<span style="color:var(--verde);font-weight:700">Ganaste</span>'
-              : '<span style="color:var(--rojo);font-weight:700">Perdiste</span>'
+              : b.ganador === 'TABLAS'
+                ? '<span style="color:var(--oro);font-weight:700">Tablas</span>'
+                : '<span style="color:var(--rojo);font-weight:700">Perdiste</span>'
             : '';
 
           return `
             <tr>
-              <td style="font-size:.8rem">${escapeHtml(b.gallo_a)} vs ${escapeHtml(b.gallo_b)}</td>
+              <td style="font-size:.8rem">${escapeHtml(b.galloa)} vs ${escapeHtml(b.gallob)}</td>
               <td class="${galloClass}">${escapeHtml(galloName)}</td>
-              <td>${b.puntos_total}</td>
+              <td>${b.puntostotal}</td>
               <td style="font-size:.8rem">${escapeHtml(b.estado)} ${ganoBadge}</td>
             </tr>
           `;
@@ -427,7 +485,7 @@ function switchBetsTab(tab, btn) {
   document.getElementById('betsHistorial').style.display = tab === 'historial' ? 'block' : 'none';
 }
 
-// ── Chat ──────────────────────────────────────────────────────────────────────
+/* ── Chat ──────────────────────────────────────────────────────────────── */
 function appendChatMsg({ username, message, system }) {
   const box = document.getElementById('chatMessages');
   if (!box) return;
@@ -464,7 +522,7 @@ function sendChat() {
   input.value = '';
 }
 
-// ── Retiros ───────────────────────────────────────────────────────────────────
+/* ── Retiros ───────────────────────────────────────────────────────────── */
 function abrirRetiro() {
   document.getElementById('retiroMsg').textContent = '';
   document.getElementById('retiroAmount').value = '';
@@ -478,7 +536,7 @@ function cerrarRetiro() {
 }
 
 async function solicitarRetiro() {
-  const amount = parseInt(document.getElementById('retiroAmount').value);
+  const amount = parseInt(document.getElementById('retiroAmount').value, 10);
   const destination = document.getElementById('retiroDestino').value.trim();
   const el = document.getElementById('retiroMsg');
 
@@ -536,7 +594,7 @@ async function loadMisRetiros() {
       </thead>
       <tbody>
         ${list.map(w => {
-          const fecha = new Date(w.created_at).toLocaleDateString('es-MX', {
+          const fecha = new Date(w.createdat).toLocaleDateString('es-MX', {
             day: '2-digit',
             month: 'short',
             hour: '2-digit',
@@ -546,7 +604,8 @@ async function loadMisRetiros() {
           const estadoColor = {
             pending: '#f39c18',
             approved: '#27ae60',
-            rejected: '#c0392b'
+            rejected: '#c0392b',
+            paid: '#2980b9'
           }[w.status] || '#888';
 
           return `
@@ -563,11 +622,12 @@ async function loadMisRetiros() {
   `;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+/* ── Helpers ───────────────────────────────────────────────────────────── */
 function showBetMsg(msg, type) {
   const el = document.getElementById('betMsg');
   el.textContent = msg;
   el.className = 'bet-msg ' + type;
+
   setTimeout(() => {
     el.textContent = '';
     el.className = 'bet-msg';

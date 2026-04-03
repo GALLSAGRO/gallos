@@ -3,220 +3,535 @@ const pool = require('../models/db');
 const auth = require('../middleware/auth');
 const adminOnly = require('../middleware/admin');
 
+router.use(auth, adminOnly);
 
-router.post('/rooms', auth, adminOnly, async (req, res) => {
-  const { slug, nombre, facebook_live_url } = req.body;
-  if (!slug || !nombre) return res.status(400).json({ error: 'slug y nombre requeridos' });
-  const q = await pool.query(
-    'INSERT INTO rooms (slug, nombre, facebook_live_url, activo) VALUES ($1,$2,$3,true) RETURNING *',
-    [slug, nombre, facebook_live_url || null]
-  );
-  res.json({ ok: true, room: q.rows[0] });
-});
+// -------------------------------------------------------
+// HELPERS
+// -------------------------------------------------------
+function getSockets(req) {
+  try { return req.app.get('sockets') || null; }
+  catch (e) { console.error('getSockets error:', e); return null; }
+}
 
+function emitSafe(fn) {
+  try { fn(); } catch (e) { console.error('socket emit error:', e); }
+}
 
-router.put('/rooms/:id', auth, adminOnly, async (req, res) => {
-  const { nombre, facebook_live_url, activo } = req.body;
-  const q = await pool.query(
-    `UPDATE rooms SET nombre=$1, facebook_live_url=$2, activo=$3 WHERE id=$4 RETURNING *`,
-    [nombre, facebook_live_url, activo, req.params.id]
-  );
-  if (!q.rows[0]) return res.status(404).json({ error: 'Sala no encontrada' });
-  res.json({ ok: true, room: q.rows[0] });
-});
+async function emitRoomRefresh(req, roomIdOrSlug) {
+  try {
+    const sockets = getSockets(req);
+    if (!sockets) return;
 
-
-router.post('/fights', auth, adminOnly, async (req, res) => {
-  const { room_id, gallo_a, gallo_b } = req.body;
-  if (!room_id || !gallo_a || !gallo_b) return res.status(400).json({ error: 'Datos invalidos' });
-
-  const active = await pool.query(
-    "SELECT id FROM peleas WHERE room_id=$1 AND estado IN ('apostando','en_vivo')",
-    [room_id]
-  );
-  if (active.rows.length) return res.status(409).json({ error: 'Ya hay una pelea activa en esta sala' });
-
-  const q = await pool.query(
-    "INSERT INTO peleas (room_id, gallo_a, gallo_b, estado) VALUES ($1,$2,$3,'apostando') RETURNING *",
-    [room_id, gallo_a, gallo_b]
-  );
-  const fight = q.rows[0];
-
-  const roomQ = await pool.query('SELECT slug FROM rooms WHERE id=$1', [room_id]);
-  const sockets = req.app.get('sockets');
-  if (sockets && roomQ.rows[0]) {
-    const slug = roomQ.rows[0].slug;
-    sockets.emitFightCreated(slug, fight);
-    sockets.emitChat(slug, `⚔️ Nueva pelea: ${gallo_a} vs ${gallo_b} — ¡Apuestas abiertas!`);
-    const historial = await pool.query(
-      'SELECT * FROM peleas WHERE room_id=$1 ORDER BY created_at DESC', [room_id]
-    );
-    sockets.emitHistorial(slug, historial.rows);
-  }
-
-  res.json({ ok: true, fight });
-});
-
-
-router.post('/fights/:id/close-bets', auth, adminOnly, async (req, res) => {
-  const fightId = req.params.id;
-  const pending = await pool.query(
-    "SELECT id, user_id, puntos_total, puntos_matched FROM apuestas WHERE pelea_id=$1 AND estado='pendiente'",
-    [fightId]
-  );
-
-  for (const row of pending.rows) {
-    const unmatched = row.puntos_total - row.puntos_matched;
-    if (unmatched > 0) {
-      await pool.query('UPDATE usuarios SET puntos = puntos + $1 WHERE id=$2', [unmatched, row.user_id]);
+    let room = null;
+    if (typeof roomIdOrSlug === 'number' || /^\d+$/.test(String(roomIdOrSlug))) {
+      const q = await pool.query('SELECT id, slug FROM rooms WHERE id = $1 LIMIT 1', [Number(roomIdOrSlug)]);
+      room = q.rows[0] || null;
+    } else {
+      const q = await pool.query('SELECT id, slug FROM rooms WHERE slug = $1 LIMIT 1', [String(roomIdOrSlug)]);
+      room = q.rows[0] || null;
     }
-    await pool.query("UPDATE apuestas SET estado='cerrada' WHERE id=$1", [row.id]);
-  }
+    if (!room) return;
 
-  await pool.query("UPDATE peleas SET estado='en_vivo', started_at=NOW() WHERE id=$1", [fightId]);
+    emitSafe(() => { if (typeof sockets.emitRoomStateBySlug === 'function')  sockets.emitRoomStateBySlug(room.slug); });
+    emitSafe(() => { if (typeof sockets.emitHistoryBySlug === 'function')    sockets.emitHistoryBySlug(room.slug); });
+    emitSafe(() => { if (typeof sockets.emitPoolByRoomId === 'function')     sockets.emitPoolByRoomId(room.id); });
+    emitSafe(() => { if (typeof sockets.emitRoomRefresh === 'function')      sockets.emitRoomRefresh(room.slug); });
+  } catch (e) { console.error('emitRoomRefresh error:', e); }
+}
 
-  const roomQ = await pool.query(
-    'SELECT r.slug FROM rooms r JOIN peleas p ON p.room_id = r.id WHERE p.id=$1', [fightId]
-  );
-  const sockets = req.app.get('sockets');
-  if (sockets && roomQ.rows[0]) {
-    const slug = roomQ.rows[0].slug;
-    sockets.emitFightUpdated(slug, { fightId, estado: 'en_vivo' });
-    sockets.emitChat(slug, '🔒 Apuestas cerradas — ¡Que empiece la pelea!');
-  }
-
-  res.json({ ok: true, refunded: pending.rows.length });
-});
-
-
-router.post('/fights/:id/winner', auth, adminOnly, async (req, res) => {
-  const fightId = req.params.id;
-  const { ganador } = req.body;
-  if (!['A', 'B'].includes(ganador)) return res.status(400).json({ error: 'Ganador invalido' });
-
-  const fightQ = await pool.query('SELECT estado, room_id FROM peleas WHERE id=$1', [fightId]);
-  if (!fightQ.rows[0]) return res.status(404).json({ error: 'Pelea no encontrada' });
-  if (fightQ.rows[0].estado !== 'en_vivo') return res.status(400).json({ error: 'La pelea no esta en vivo' });
-
-  const matches = await pool.query(
-    `SELECT m.*, aa.user_id AS user_a, ab.user_id AS user_b
-     FROM matches m
-     JOIN apuestas aa ON aa.id = m.apuesta_a_id
-     JOIN apuestas ab ON ab.id = m.apuesta_b_id
-     WHERE m.pelea_id=$1`,
+// -------------------------------------------------------
+// Liquidar ganador (winner_side: 'R' o 'V')
+// Aplica a apuestas ligadas a event_match_id o pelea_id
+// -------------------------------------------------------
+async function settleFightResult(client, fightId, winnerSide) {
+  const fightQ = await client.query(
+    `SELECT id, room_id, gallo_a, gallo_b, estado FROM peleas WHERE id = $1 FOR UPDATE`,
     [fightId]
   );
+  const fight = fightQ.rows[0];
+  if (!fight) throw new Error('Pelea no encontrada');
+  if (fight.estado === 'finalizada') throw new Error('La pelea ya fue liquidada');
+  if (!['A', 'B'].includes(winnerSide)) throw new Error('Ganador inválido');
 
-  for (const m of matches.rows) {
-    const winnerUserId = ganador === 'A' ? m.user_a : m.user_b;
-    const stake        = Number(m.puntos);
-    const commission   = Math.floor(stake * 0.10);
-    const netProfit    = stake - commission;
-    const payout       = stake + netProfit;
+  const winnerGallo = winnerSide === 'A' ? fight.gallo_a : fight.gallo_b;
+  const loserGallo  = winnerSide === 'A' ? fight.gallo_b : fight.gallo_a;
 
-    await pool.query('UPDATE usuarios SET puntos = puntos + $1 WHERE id=$2', [payout, winnerUserId]);
-    await pool.query(
-      'UPDATE matches SET comision_monto=$1, ganancia_bruta=$2, ganancia_neta=$3 WHERE id=$4',
-      [commission, stake * 2, netProfit, m.id]
-    );
+  const betsQ = await client.query(
+    `SELECT id, user_id, gallo, puntos_total, puntos_matched, estado
+     FROM apuestas WHERE pelea_id = $1 FOR UPDATE`,
+    [fightId]
+  );
+  const bets = betsQ.rows;
+
+  let totalWinnerMatched = 0;
+  let totalLoserMatched  = 0;
+
+  for (const bet of bets) {
+    const matched = Number(bet.puntos_matched || 0);
+    if (matched <= 0) continue;
+    if (bet.gallo === winnerGallo) totalWinnerMatched += matched;
+    if (bet.gallo === loserGallo)  totalLoserMatched  += matched;
   }
 
-  await pool.query(
-    "UPDATE peleas SET estado='terminada', ganador=$1, ended_at=NOW() WHERE id=$2",
-    [ganador, fightId]
-  );
+  const commissionPct        = 0.10;
+  const totalCommission      = Number((totalLoserMatched * commissionPct).toFixed(2));
+  const distributableLoserPool = Number((totalLoserMatched - totalCommission).toFixed(2));
+  const updates = [];
 
-  const roomQ = await pool.query(
-    'SELECT r.slug FROM rooms r JOIN peleas p ON p.room_id = r.id WHERE p.id=$1', [fightId]
-  );
-  const fightData = await pool.query('SELECT * FROM peleas WHERE id=$1', [fightId]);
-  const sockets = req.app.get('sockets');
+  for (const bet of bets) {
+    const total    = Number(bet.puntos_total   || 0);
+    const matched  = Number(bet.puntos_matched || 0);
+    const unmatched = Number((total - matched).toFixed(2));
 
-  if (sockets && roomQ.rows[0]) {
-    const slug = roomQ.rows[0].slug;
+    if (bet.gallo === winnerGallo) {
+      let grossProfit = 0, netProfit = 0, commissionAmount = 0;
+      let payout = unmatched;
 
-    sockets.emitFightResult(slug, { fight: fightData.rows[0] });
-
-    const historial = await pool.query(
-      'SELECT * FROM peleas WHERE room_id=$1 ORDER BY created_at DESC',
-      [fightQ.rows[0].room_id]
-    );
-    sockets.emitHistorial(slug, historial.rows);
-
-    /* ── Mensaje de resultado en el chat ── */
-    const galloGanador = ganador === 'A' ? fightData.rows[0].gallo_a : fightData.rows[0].gallo_b;
-    sockets.emitChat(slug, `🐓 ¡${galloGanador} GANA! Puntos repartidos a los ganadores`);
-
-    /* ── balance-update individual a cada usuario afectado ── */
-    const userIds = [...new Set(matches.rows.flatMap(m => [m.user_a, m.user_b]))];
-    for (const uid of userIds) {
-      const uq = await pool.query('SELECT puntos FROM usuarios WHERE id=$1', [uid]);
-      if (uq.rows[0]) {
-        sockets.io.to(`user:${uid}`).emit('balance-update', { puntos: uq.rows[0].puntos });
+      if (matched > 0 && totalWinnerMatched > 0) {
+        grossProfit      = Number(((matched / totalWinnerMatched) * totalLoserMatched).toFixed(2));
+        commissionAmount = Number((grossProfit * commissionPct).toFixed(2));
+        netProfit        = Number((grossProfit - commissionAmount).toFixed(2));
+        payout           = Number((unmatched + matched + netProfit).toFixed(2));
       }
+
+      await client.query(
+        `UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`,
+        [payout, bet.user_id]
+      );
+      await client.query(
+        `UPDATE apuestas SET estado = 'ganada' WHERE id = $1`,
+        [bet.id]
+      );
+      updates.push({ betId: bet.id, userId: bet.user_id, status: 'ganada', payout });
+
+    } else if (bet.gallo === loserGallo) {
+      if (unmatched > 0) {
+        await client.query(
+          `UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`,
+          [unmatched, bet.user_id]
+        );
+      }
+      await client.query(
+        `UPDATE apuestas SET estado = 'perdida' WHERE id = $1`,
+        [bet.id]
+      );
+      updates.push({ betId: bet.id, userId: bet.user_id, status: 'perdida' });
+
+    } else {
+      // apuesta sin cruzar — devolver todo
+      if (total > 0) {
+        await client.query(
+          `UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`,
+          [total, bet.user_id]
+        );
+      }
+      await client.query(
+        `UPDATE apuestas SET estado = 'devuelta' WHERE id = $1`,
+        [bet.id]
+      );
+      updates.push({ betId: bet.id, userId: bet.user_id, status: 'devuelta', payout: total });
     }
   }
 
-  res.json({ ok: true, matchesSettled: matches.rows.length });
+  await client.query(
+    `UPDATE peleas SET estado = 'finalizada', ganador = $2, ended_at = NOW() WHERE id = $1`,
+    [fightId, winnerGallo]
+  );
+
+  return { fightId, roomId: fight.room_id, winner: winnerGallo, totalCommission, distributableLoserPool, updates };
+}
+
+// -------------------------------------------------------
+// Declarar tablas
+// -------------------------------------------------------
+async function settleFightDraw(client, fightId) {
+  const fightQ = await client.query(
+    `SELECT id, room_id, gallo_a, gallo_b, estado FROM peleas WHERE id = $1 FOR UPDATE`,
+    [fightId]
+  );
+  const fight = fightQ.rows[0];
+  if (!fight) throw new Error('Pelea no encontrada');
+  if (fight.estado === 'finalizada') throw new Error('La pelea ya fue liquidada');
+
+  const betsQ = await client.query(
+    `SELECT id, user_id, puntos_total FROM apuestas WHERE pelea_id = $1 FOR UPDATE`,
+    [fightId]
+  );
+  for (const bet of betsQ.rows) {
+    const refund = Number(bet.puntos_total || 0);
+    if (refund > 0) {
+      await client.query(`UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`, [refund, bet.user_id]);
+    }
+    await client.query(`UPDATE apuestas SET estado = 'tabla' WHERE id = $1`, [bet.id]);
+  }
+
+  await client.query(
+    `UPDATE peleas SET estado = 'finalizada', ganador = 'TABLA', ended_at = NOW() WHERE id = $1`,
+    [fightId]
+  );
+  return { fightId, roomId: fight.room_id, result: 'TABLA' };
+}
+
+// -------------------------------------------------------
+// Cerrar apuestas y devolver no cruzadas
+// -------------------------------------------------------
+async function refundPendingAndClose(client, fightId) {
+  const fightQ = await client.query(
+    `SELECT id, room_id, gallo_a, gallo_b, estado FROM peleas WHERE id = $1 FOR UPDATE`,
+    [fightId]
+  );
+  const fight = fightQ.rows[0];
+  if (!fight) throw new Error('Pelea no encontrada');
+
+  const betsQ = await client.query(
+    `SELECT id, user_id, puntos_total, puntos_matched FROM apuestas WHERE pelea_id = $1 FOR UPDATE`,
+    [fightId]
+  );
+  for (const bet of betsQ.rows) {
+    const total    = Number(bet.puntos_total   || 0);
+    const matched  = Number(bet.puntos_matched || 0);
+    const pending  = Number((total - matched).toFixed(2));
+    if (pending > 0) {
+      await client.query(`UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`, [pending, bet.user_id]);
+    }
+    await client.query(
+      `UPDATE apuestas SET estado = CASE WHEN puntos_matched > 0 THEN 'matcheada' ELSE 'cerrada' END WHERE id = $1`,
+      [bet.id]
+    );
+  }
+
+  await client.query(
+    `UPDATE peleas SET estado = 'cerrada', ended_at = NOW() WHERE id = $1`,
+    [fightId]
+  );
+  return { fightId, roomId: fight.room_id };
+}
+
+// =======================================================
+// ROOMS
+// =======================================================
+
+router.get('/rooms', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, nombre, slug, facebook_live_url, activos, created_at
+       FROM rooms ORDER BY created_at DESC`
+    );
+    res.json(rows);
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Error al obtener salas' }); }
 });
 
+router.post('/rooms', async (req, res) => {
+  try {
+    const { nombre, slug, facebook_live_url, activos } = req.body;
+    if (!nombre || !slug) return res.status(400).json({ error: 'nombre y slug son obligatorios' });
 
-router.get('/withdrawals', auth, adminOnly, async (req, res) => {
-  const q = await pool.query(
-    `SELECT w.*, u.username, u.nombre_completo, u.numero_celular
-     FROM withdrawal_requests w
-     JOIN usuarios u ON u.id = w.user_id
-     ORDER BY w.created_at DESC`
-  );
-  res.json(q.rows);
+    const { rows } = await pool.query(
+      `INSERT INTO rooms (nombre, slug, facebook_live_url, activos)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [nombre, slug, facebook_live_url || null, activos === undefined ? true : !!activos]
+    );
+    res.json(rows[0]);
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Error al crear sala' }); }
 });
 
+router.put('/rooms/:roomid', async (req, res) => {
+  try {
+    const roomId = Number(req.params.roomid);
+    const { nombre, slug, facebook_live_url, activos } = req.body;
 
-router.post('/withdrawals/:id/approve', auth, adminOnly, async (req, res) => {
-  const id = req.params.id;
-  const q  = await pool.query(
-    'SELECT * FROM withdrawal_requests WHERE id=$1 AND status=$2', [id, 'pending']
-  );
-  if (!q.rows[0]) return res.status(404).json({ error: 'Solicitud no encontrada o ya procesada' });
-  await pool.query("UPDATE withdrawal_requests SET status='approved', updated_at=NOW() WHERE id=$1", [id]);
-  res.json({ ok: true });
+    const { rows } = await pool.query(
+      `UPDATE rooms
+       SET nombre = COALESCE($2, nombre),
+           slug   = COALESCE($3, slug),
+           facebook_live_url = COALESCE($4, facebook_live_url),
+           activos = COALESCE($5, activos)
+       WHERE id = $1 RETURNING *`,
+      [roomId, nombre, slug, facebook_live_url, activos]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Sala no encontrada' });
+
+    await emitRoomRefresh(req, roomId);
+    res.json(rows[0]);
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Error al actualizar sala' }); }
 });
 
+// =======================================================
+// FIGHTS (peleas — sistema legacy, sigue funcionando)
+// =======================================================
 
-router.post('/withdrawals/:id/reject', auth, adminOnly, async (req, res) => {
-  const id = req.params.id;
-  const q  = await pool.query(
-    'SELECT * FROM withdrawal_requests WHERE id=$1 AND status=$2', [id, 'pending']
-  );
-  if (!q.rows[0]) return res.status(404).json({ error: 'Solicitud no encontrada o ya procesada' });
-  await pool.query('UPDATE usuarios SET puntos = puntos + $1 WHERE id=$2', [q.rows[0].amount, q.rows[0].user_id]);
-  await pool.query(
-    "UPDATE withdrawal_requests SET status='rejected', admin_note=$2, updated_at=NOW() WHERE id=$1",
-    [id, req.body.note || null]
-  );
-  res.json({ ok: true });
+router.get('/rooms/:roomid/active-fight', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, room_id, gallo_a, gallo_b, estado, ganador, created_at
+       FROM peleas WHERE room_id = $1 AND estado IN ('pendiente','abierta')
+       ORDER BY created_at ASC LIMIT 1`,
+      [Number(req.params.roomid)]
+    );
+    res.json(rows[0] || null);
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Error al obtener pelea activa' }); }
 });
 
-
-router.post('/add-points', auth, adminOnly, async (req, res) => {
-  const { username, puntos } = req.body;
-  const amt = parseInt(puntos, 10);
-  if (!username || !amt || amt <= 0) return res.status(400).json({ error: 'Datos invalidos' });
-  const q = await pool.query(
-    'UPDATE usuarios SET puntos = puntos + $1 WHERE username=$2 RETURNING id, username, puntos',
-    [amt, username]
-  );
-  if (!q.rows[0]) return res.status(404).json({ error: 'Usuario no encontrado' });
-  res.json({ ok: true, user: q.rows[0] });
+router.get('/rooms/:roomid/fights', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, room_id, gallo_a, gallo_b, estado, ganador, created_at
+       FROM peleas WHERE room_id = $1 ORDER BY created_at ASC`,
+      [Number(req.params.roomid)]
+    );
+    res.json(rows);
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Error al obtener peleas' }); }
 });
 
+router.post('/rooms/:roomid/fights', async (req, res) => {
+  try {
+    const roomId = Number(req.params.roomid);
+    const { gallo_a, gallo_b } = req.body;
+    if (!gallo_a || !gallo_b) return res.status(400).json({ error: 'gallo_a y gallo_b son obligatorios' });
 
-router.get('/users', auth, adminOnly, async (req, res) => {
-  const q = await pool.query(
-    'SELECT id, nombre_completo, username, email, numero_celular, puntos, is_admin, created_at FROM usuarios ORDER BY created_at DESC'
-  );
-  res.json(q.rows);
+    const { rows } = await pool.query(
+      `INSERT INTO peleas (room_id, gallo_a, gallo_b, estado) VALUES ($1, $2, $3, 'pendiente') RETURNING *`,
+      [roomId, gallo_a, gallo_b]
+    );
+    await emitRoomRefresh(req, roomId);
+    res.json(rows[0]);
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Error al crear pelea' }); }
 });
 
+router.post('/rooms/:roomid/open-bets/:peleaid', async (req, res) => {
+  try {
+    const roomId  = Number(req.params.roomid);
+    const peleaId = Number(req.params.peleaid);
+    const { rows } = await pool.query(
+      `UPDATE peleas SET estado = 'abierta' WHERE id = $1 AND room_id = $2 RETURNING *`,
+      [peleaId, roomId]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Pelea no encontrada' });
+    await emitRoomRefresh(req, roomId);
+    res.json({ ok: true, fight: rows[0] });
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Error al abrir apuestas' }); }
+});
+
+router.post('/rooms/:roomid/close-bets/:peleaid', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const roomId  = Number(req.params.roomid);
+    const peleaId = Number(req.params.peleaid);
+    await client.query('BEGIN');
+    const result = await refundPendingAndClose(client, peleaId);
+    await client.query('COMMIT');
+    await emitRoomRefresh(req, roomId);
+    res.json({ ok: true, result });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    res.status(500).json({ error: e.message || 'Error al cerrar apuestas' });
+  } finally { client.release(); }
+});
+
+router.post('/rooms/:roomid/winner/:peleaid', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const roomId  = Number(req.params.roomid);
+    const peleaId = Number(req.params.peleaid);
+    const { ganador } = req.body;
+    await client.query('BEGIN');
+    const result = await settleFightResult(client, peleaId, ganador);
+    await client.query('COMMIT');
+    await emitRoomRefresh(req, roomId);
+    res.json({ ok: true, result });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    res.status(500).json({ error: e.message || 'Error al liquidar ganador' });
+  } finally { client.release(); }
+});
+
+router.post('/rooms/:roomid/draw/:peleaid', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const roomId  = Number(req.params.roomid);
+    const peleaId = Number(req.params.peleaid);
+    await client.query('BEGIN');
+    const result = await settleFightDraw(client, peleaId);
+    await client.query('COMMIT');
+    await emitRoomRefresh(req, roomId);
+    res.json({ ok: true, result });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    res.status(500).json({ error: e.message || 'Error al declarar tabla' });
+  } finally { client.release(); }
+});
+
+router.post('/rooms/:roomid/saltar-pelea/:peleaid', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const roomId  = Number(req.params.roomid);
+    const peleaId = Number(req.params.peleaid);
+    await client.query('BEGIN');
+
+    const fightQ = await client.query(
+      `SELECT id, room_id, estado FROM peleas WHERE id = $1 AND room_id = $2 FOR UPDATE`,
+      [peleaId, roomId]
+    );
+    const fight = fightQ.rows[0];
+    if (!fight) throw new Error('Pelea no encontrada');
+    if (fight.estado === 'finalizada') throw new Error('No puedes saltar una pelea finalizada');
+
+    const betsQ = await client.query(
+      `SELECT id, user_id, puntos_total, puntos_matched FROM apuestas WHERE pelea_id = $1 FOR UPDATE`,
+      [peleaId]
+    );
+    for (const bet of betsQ.rows) {
+      const total   = Number(bet.puntos_total   || 0);
+      const matched = Number(bet.puntos_matched || 0);
+      const refund  = Number((total - matched).toFixed(2));
+      if (refund > 0) {
+        await client.query(`UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`, [refund, bet.user_id]);
+      }
+      await client.query(
+        `UPDATE apuestas SET estado = CASE WHEN puntos_matched > 0 THEN estado ELSE 'saltada' END WHERE id = $1`,
+        [bet.id]
+      );
+    }
+
+    await client.query(
+      `UPDATE peleas SET estado = 'saltada', ended_at = NOW() WHERE id = $1`,
+      [peleaId]
+    );
+
+    // Activar siguiente pelea pendiente
+    const nextQ = await client.query(
+      `SELECT id FROM peleas WHERE room_id = $1 AND estado = 'pendiente' ORDER BY created_at ASC LIMIT 1`,
+      [roomId]
+    );
+    let nextFight = null;
+    if (nextQ.rows.length) {
+      const { rows } = await client.query(
+        `UPDATE peleas SET estado = 'abierta' WHERE id = $1 RETURNING *`,
+        [nextQ.rows[0].id]
+      );
+      nextFight = rows[0] || null;
+    }
+
+    await client.query('COMMIT');
+    await emitRoomRefresh(req, roomId);
+    res.json({ ok: true, skippedFightId: peleaId, nextFight });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    res.status(500).json({ error: e.message || 'Error al saltar pelea' });
+  } finally { client.release(); }
+});
+
+// =======================================================
+// USERS / PUNTOS
+// =======================================================
+
+router.get('/users', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, username, email, nombre_completo, numero_celular, puntos, role, is_admin, created_at
+       FROM usuarios ORDER BY created_at DESC`
+    );
+    res.json(rows);
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Error al obtener usuarios' }); }
+});
+
+router.post('/users/:id/points', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const userId = Number(req.params.id);
+    const amount = Number(req.body.amount || 0);
+    const motivo = req.body.reason || req.body.motivo || null;
+
+    if (!amount || Number.isNaN(amount)) return res.status(400).json({ error: 'amount inválido' });
+
+    await client.query('BEGIN');
+
+    const uQ = await client.query(
+      `UPDATE usuarios SET puntos = puntos + $2 WHERE id = $1 RETURNING id, username, puntos`,
+      [userId, amount]
+    );
+    if (!uQ.rows.length) throw new Error('Usuario no encontrado');
+
+    // Registrar en wallet_adjustments (reemplaza puntos_logs)
+    await client.query(
+      `INSERT INTO wallet_adjustments (user_id, admin_user_id, adjustment_type, puntos, motivo)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [userId, req.user.id, amount > 0 ? 'suma' : 'resta', Math.abs(amount), motivo]
+    );
+
+    await client.query('COMMIT');
+    res.json({ ok: true, user: uQ.rows[0] });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    res.status(500).json({ error: e.message || 'Error al ajustar puntos' });
+  } finally { client.release(); }
+});
+
+// =======================================================
+// WITHDRAWALS
+// =======================================================
+
+router.get('/withdrawals', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT w.id, w.user_id, w.amount, w.status, w.created_at,
+              u.username, u.nombre_completo, u.numero_celular
+       FROM withdrawal_requests w
+       JOIN usuarios u ON u.id = w.user_id
+       ORDER BY w.created_at DESC`
+    );
+    res.json(rows);
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Error al obtener retiros' }); }
+});
+
+router.post('/withdrawals/:id/approve', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `UPDATE withdrawal_requests SET status = 'approved', approved_by = $2, updated_at = NOW()
+       WHERE id = $1 AND status = 'pending' RETURNING *`,
+      [Number(req.params.id), req.user.id]
+    );
+    if (!rows.length) throw new Error('Retiro no encontrado o ya procesado');
+    await client.query('COMMIT');
+    res.json({ ok: true, withdrawal: rows[0] });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    res.status(500).json({ error: e.message || 'Error al aprobar retiro' });
+  } finally { client.release(); }
+});
+
+router.post('/withdrawals/:id/reject', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const wQ = await client.query(
+      `SELECT id, user_id, amount, status FROM withdrawal_requests WHERE id = $1 FOR UPDATE`,
+      [Number(req.params.id)]
+    );
+    const w = wQ.rows[0];
+    if (!w) throw new Error('Retiro no encontrado');
+    if (w.status !== 'pending') throw new Error('El retiro ya fue procesado');
+
+    await client.query(`UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`, [w.amount, w.user_id]);
+    await client.query(
+      `UPDATE withdrawal_requests SET status = 'rejected', updated_at = NOW() WHERE id = $1`,
+      [w.id]
+    );
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    res.status(500).json({ error: e.message || 'Error al rechazar retiro' });
+  } finally { client.release(); }
+});
 
 module.exports = router;
