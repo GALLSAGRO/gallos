@@ -858,7 +858,6 @@ async function agregarPelea() {
   const equipo_verde_id = Number($('pelaEquipoVerde').value);
   const notas           = $('pelaNota').value.trim();
 
-  if (!gallo_rojo || !gallo_verde)     { showAlert('alertPelea','Los nombres de los gallos son obligatorios'); return; }
   if (!equipo_rojo_id || !equipo_verde_id) { showAlert('alertPelea','Selecciona ambos equipos'); return; }
   if (equipo_rojo_id === equipo_verde_id)  { showAlert('alertPelea','El equipo rojo y verde no pueden ser el mismo'); return; }
 
@@ -1014,4 +1013,5 @@ with open('/root/admin.html', 'w', encoding='utf-8') as f:
     f.write(html)
 
 print(f"Listo: {len(html)} chars")
+
 
