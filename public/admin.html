@@ -348,12 +348,8 @@ html = '''<!DOCTYPE html>
     </div>
     <div class="form-row">
       <div class="form-group">
-        <label>Nombre del gallo rojo *</label>
-        <input class="form-control" id="pelaGalloRojo" placeholder="Cenizo, Pinto..." />
       </div>
       <div class="form-group">
-        <label>Nombre del gallo verde *</label>
-        <input class="form-control" id="pelaGalloVerde" placeholder="Giro, Jabado..." />
       </div>
     </div>
     <div class="form-group">
@@ -852,8 +848,6 @@ function openModalPelea() {
   // Default: segundo equipo en verde
   if (activeTeams.length > 1) $('pelaEquipoVerde').value = activeTeams[1].id;
 
-  $('pelaGalloRojo').value  = '';
-  $('pelaGalloVerde').value = '';
   $('pelaNota').value       = '';
   $('alertPelea').className = 'alert alert-error';
   openModal('modalPelea');
@@ -862,8 +856,6 @@ function openModalPelea() {
 async function agregarPelea() {
   const equipo_rojo_id  = Number($('pelaEquipoRojo').value);
   const equipo_verde_id = Number($('pelaEquipoVerde').value);
-  const gallo_rojo      = $('pelaGalloRojo').value.trim();
-  const gallo_verde     = $('pelaGalloVerde').value.trim();
   const notas           = $('pelaNota').value.trim();
 
   if (!gallo_rojo || !gallo_verde)     { showAlert('alertPelea','Los nombres de los gallos son obligatorios'); return; }
@@ -873,7 +865,7 @@ async function agregarPelea() {
   try {
     await api(`/api/event-matches/${activeEventId}`, {
       method:'POST',
-      body: JSON.stringify({ gallo_rojo, gallo_verde, equipo_rojo_id, equipo_verde_id, notas: notas||null })
+      body: JSON.stringify({ equipo_rojo_id, equipo_verde_id, notas: notas||null })
     });
     closeModal('modalPelea');
     toast('Pelea agregada a la cartelera');
@@ -1022,3 +1014,4 @@ with open('/root/admin.html', 'w', encoding='utf-8') as f:
     f.write(html)
 
 print(f"Listo: {len(html)} chars")
+

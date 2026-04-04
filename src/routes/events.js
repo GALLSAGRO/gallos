@@ -145,54 +145,37 @@ router.post('/:id/start', admin, async (req, res) => {
     await client.query('BEGIN');
 
     const evQ = await client.query(
-      `SELECT id, room_id, estado FROM events WHERE id=$1 FOR UPDATE`, [id]
-    );
-    const ev = evQ.rows[0];
-    if (!ev) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Evento no encontrado' });
-    }
-    if (ev.estado !== 'programado') {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'El evento no esta en estado programado' });
-    }
-
-    const activo = await client.query(
-      `SELECT id FROM events WHERE room_id=$1 AND estado='activo'`, [ev.room_id]
-    );
-    if (activo.rows.length) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Ya hay un evento activo en esta sala' });
-    }
-
-    const firstMatch = await client.query(
-      `SELECT id FROM event_matches
-       WHERE event_id=$1 AND estado='pendiente'
-       ORDER BY orden ASC LIMIT 1`,
-      [id]
-    );
-    if (firstMatch.rows[0]) {
-      await client.query(
-        `UPDATE event_matches SET estado='lista' WHERE id=$1`,
-        [firstMatch.rows[0].id]
-      );
-    }
-
-    const { rows } = await client.query(
       `UPDATE events
        SET estado='activo', numero_pelea_actual=1, started_at=NOW()
-       WHERE id=$1 RETURNING *`,
+       WHERE id=$1 AND estado='programado'
+       RETURNING *`,
       [id]
     );
+    if (!evQ.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Evento no encontrado o ya no esta en programado' });
+    }
+
+    await client.query(
+      `UPDATE event_matches
+       SET estado='lista'
+       WHERE id = (
+         SELECT id FROM event_matches
+         WHERE event_id=$1 AND estado='pendiente'
+         ORDER BY orden ASC LIMIT 1
+       )`,
+      [id]
+    );
+
     await client.query('COMMIT');
 
     const sockets = req.app.get('sockets');
-    const roomQ   = await pool.query('SELECT slug FROM rooms WHERE id=$1', [ev.room_id]);
+    const roomQ   = await pool.query('SELECT slug FROM rooms WHERE id=$1', [evQ.rows[0].room_id]);
     if (sockets && roomQ.rows[0]) {
-      sockets.emitEventStarted(roomQ.rows[0].slug, rows[0]);
+      sockets.emitEventStarted(roomQ.rows[0].slug, evQ.rows[0]);
     }
 
-    res.json(rows[0]);
+    res.json(evQ.rows[0]);
   } catch (e) {
     await client.query('ROLLBACK');
     console.error('POST /api/events/:id/start', e);
