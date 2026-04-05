@@ -28,7 +28,7 @@ router.get('/:eventId', async (req, res) => {
 // POST /api/event-matches/:eventId — agregar pelea a cartelera
 router.post('/:eventId', admin, async (req, res) => {
   const event_id = Number(req.params.eventId);
-  const { equipo_rojo_id, equipo_verde_id, notas } = req.body;
+  const { equipo_rojo_id, equipo_verde_id, notes } = req.body;
 
   if (!equipo_rojo_id || !equipo_verde_id) {
     return res.status(400).json({ error: 'equipo_rojo_id y equipo_verde_id son obligatorios' });
@@ -49,11 +49,11 @@ router.post('/:eventId', admin, async (req, res) => {
     const { rows } = await pool.query(
        `INSERT INTO event_matches
           (event_id, numero_pelea, orden, 
-            equipo_rojo_id, equipo_verde_id, estado, notas)
+            equipo_rojo_id, equipo_verde_id, estado, notes)
         VALUES ($1,$2,$3,$4,$5,'pendiente',$6)`,
         [event_id, numero_pelea, orden,
          equipo_rojo_id, equipo_verde_id,
-         notas || null]
+         notes || null]
     );
 
     await pool.query(
