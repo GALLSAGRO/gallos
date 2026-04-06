@@ -171,18 +171,23 @@ router.post('/:id/start', admin, async (req, res) => {
       return res.status(400).json({ error: 'Evento no encontrado o ya no esta en programado' });
     }
 
+    const firstMatchQ = await client.query(
+     `SELECT id
+      FROM event_matches
+      WHERE event_id = $1 AND estado = 'pendiente'
+      ORDER BY orden ASC
+      LIMIT 1`,
+    [id]
+  );
+
+  if (firstMatchQ.rows[0]) {
     await client.query(
-      `UPDATE event_matches
-       SET estado = 'lista'
-       WHERE id = (
-         SELECT id
-         FROM event_matches
-         WHERE event_id = $1 AND estado = 'pendiente'
-         ORDER BY orden ASC
-         LIMIT 1
-       )`,
-      [id]
+     `UPDATE event_matches
+      SET estado = 'lista'
+      WHERE id = $1`,
+      [firstMatchQ.rows[0].id]
     );
+}
 
     await client.query('COMMIT');
 
