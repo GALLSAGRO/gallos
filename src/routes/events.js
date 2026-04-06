@@ -6,7 +6,7 @@ const admin = require('../middleware/admin');
 router.get('/rooms', admin, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, slug, nombre, activa
+      `SELECT id, slug, nombre, activos
        FROM rooms
        ORDER BY nombre ASC`
     );
