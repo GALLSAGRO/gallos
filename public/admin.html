@@ -535,6 +535,7 @@ async function loadEventsList() {
         <td>${badgeEstado(ev.estado)}</td>
         <td>${ev.numero_pelea_actual}/${ev.total_peleas}</td>
         <td style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${ev.estado==='programado' ? `<button class="btn btn-ghost btn-sm" onclick="cargarEvento(${ev.id})">Gestionar</button>` : ''}
           ${ev.estado==='programado' ? `<button class="btn btn-success btn-sm" onclick="iniciarEvento(${ev.id})">Iniciar</button>` : ''}
           ${ev.estado==='activo'     ? `<button class="btn btn-gold btn-sm" onclick="cargarEvento(${ev.id})">Gestionar</button>` : ''}
           ${ev.estado==='finalizado' ? `<button class="btn btn-ghost btn-sm" onclick="cargarEvento(${ev.id})">Ver</button>` : ''}
