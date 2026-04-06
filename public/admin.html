@@ -346,12 +346,6 @@ html = '''<!DOCTYPE html>
         <select class="form-control" id="pelaEquipoVerde"></select>
       </div>
     </div>
-    <div class="form-row">
-      <div class="form-group">
-      </div>
-      <div class="form-group">
-      </div>
-    </div>
     <div class="form-group">
       <label>Notas (peso, categoria, etc.)</label>
       <input class="form-control" id="pelaNota" />
@@ -432,10 +426,23 @@ let wsocket         = null;
 function $(id) { return document.getElementById(id); }
 
 async function api(url, opts = {}) {
-  opts.headers = { ...opts.headers, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  opts.headers = {
+    ...opts.headers,
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  };
+
   const r = await fetch(url, opts);
-  const d = await r.json();
-  if (!r.ok) throw new Error(d.error || 'Error');
+  const text = await r.text();
+
+  let d = {};
+  try {
+    d = text ? JSON.parse(text) : {};
+  } catch (_) {
+    throw new Error(text || `Respuesta inválida del servidor (${r.status})`);
+  }
+
+  if (!r.ok) throw new Error(d.error || `Error ${r.status}`);
   return d;
 }
 
@@ -1013,5 +1020,3 @@ with open('/root/admin.html', 'w', encoding='utf-8') as f:
     f.write(html)
 
 print(f"Listo: {len(html)} chars")
-
-
