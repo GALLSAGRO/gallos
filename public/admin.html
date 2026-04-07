@@ -770,14 +770,9 @@ async function declararResultado(matchId, resultado) {
   const labels = { rojo:'Gana Rojo', verde:'Gana Verde', tablas:'Tablas' };
   if (!confirm(`Confirmar: ${labels[resultado]}?`)) return;
   try {
-    if (resultado === 'tablas') {
-      await api(`/api/event-matches/${matchId}/draw`, { method:'POST' }); // ← CORREGIDO
-    } else {
-      const ganador = resultado === 'rojo' ? 'R' : 'V'; // ← CORREGIDO
-      await api(`/api/event-matches/${matchId}/winner`, {
-        method:'POST', body: JSON.stringify({ ganador })
-      });
-    }
+    await api(`/api/event-matches/${matchId}/result`, {
+      method:'POST', body: JSON.stringify({ resultado })
+    });
     toast(`Resultado declarado: ${labels[resultado]}`);
     await recargarEvento();
   } catch (e) { toast(e.message, false); }
