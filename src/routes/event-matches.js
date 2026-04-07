@@ -265,6 +265,31 @@ router.post('/:matchId/result', admin, async (req, res) => {
   }
 });
 
+// POST /api/event-matches/:id/close-betting
+router.post('/:id/close-betting', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+
+    const q = await db.query(
+      `UPDATE event_matches
+       SET estado = 'en_vivo'
+       WHERE id = $1
+         AND estado IN ('lista', 'apostando')
+       RETURNING *`,
+      [id]
+    );
+
+    if (!q.rows[0]) {
+      return res.status(400).json({ error: 'La pelea no está abierta para apuestas' });
+    }
+
+    res.json({ ok: true, match: q.rows[0] });
+  } catch (err) {
+    console.error('POST /api/event-matches/:id/close-betting error:', err);
+    res.status(500).json({ error: 'Error al cerrar apuestas' });
+  }
+});
+
 // POST /api/event-matches/:matchId/skip - poner en espera
 router.post('/:matchId/skip', admin, async (req, res) => {
   const matchId = Number(req.params.matchId);

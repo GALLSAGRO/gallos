@@ -615,21 +615,29 @@ function renderCurrentMatch(match, evEstado) {
     el.innerHTML = `<div class="empty" style="padding:16px 0">${evEstado==='finalizado' ? 'Evento finalizado' : 'Sin pelea activa'}</div>`;
     return;
   }
+
   el.innerHTML = `
     <div class="match-panel">
       <div class="match-num">Pelea #${match.numero_pelea}</div>
       <div class="match-vs-row">
         <div class="match-side">
-          <div class="match-gallo rojo">${esc(match.gallo_rojo)}</div>
-          <div class="match-equipo">${esc(match.nombre_equipo_rojo || '')}</div>
+          <div class="match-gallo rojo">${esc(match.nombre_equipo_rojo || 'Equipo Rojo')}</div>
+          <div class="match-equipo">Rojo</div>
         </div>
         <div class="match-vs">VS</div>
         <div class="match-side">
-          <div class="match-gallo verde">${esc(match.gallo_verde)}</div>
-          <div class="match-equipo">${esc(match.nombre_equipo_verde || '')}</div>
+          <div class="match-gallo verde">${esc(match.nombre_equipo_verde || 'Equipo Verde')}</div>
+          <div class="match-equipo">Verde</div>
         </div>
       </div>
+
       <div style="margin-bottom:10px">${badgeEstado(match.estado)}</div>
+
+      ${evEstado === 'activo' && ['lista', 'apostando'].includes(match.estado) ? `
+      <div style="margin-bottom:10px">
+        <button class="btn btn-danger btn-sm" onclick="cerrarApuestas(${match.id})">Cerrar apuestas</button>
+      </div>` : ''}
+
       ${evEstado === 'activo' ? `
       <div class="result-btns">
         <button class="btn btn-rojo" onclick="declararResultado(${match.id},'rojo')">Gana Rojo +3</button>
@@ -773,6 +781,17 @@ async function saltarPelea(matchId) {
     toast('Pelea puesta en espera');
     await recargarEvento();
   } catch (e) { toast(e.message, false); }
+}
+
+async function cerrarApuestas(matchId) {
+  if (!confirm('Cerrar apuestas para esta pelea?')) return;
+  try {
+    await api(`/api/event-matches/${matchId}/close-betting`, { method:'POST' });
+    toast('Apuestas cerradas');
+    await recargarEvento();
+  } catch (e) {
+    toast(e.message, false);
+  }
 }
 
 async function reactivarPelea(matchId) {
