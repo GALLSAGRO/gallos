@@ -706,24 +706,62 @@ function renderCartelera(pendientes, evEstado) {
     </div>`).join('');
 }
 
-function renderHistorial(terminadas) {
-  const el = $('historialPanel');
-  if (!terminadas.length) { el.innerHTML = '<div class="empty" style="padding:12px 0">Sin resultados</div>'; return; }
-  el.innerHTML = [...terminadas].reverse().map(m => {
-    let badge = '';
-    if (m.resultado==='rojo')   badge = `<span class="badge badge-red">Rojo +${m.puntos_rojo}</span>`;
-    if (m.resultado==='verde')  badge = `<span class="badge badge-green">Verde +${m.puntos_verde}</span>`;
-    if (m.resultado==='tablas') badge = `<span class="badge badge-gold">Tablas</span>`;
-    return `<div class="fight-item" style="padding:8px 12px">
-      <span class="fight-num">#${m.numero_pelea}</span>
-      <div class="fight-names" style="font-size:.8rem">
-        <span class="fight-rojo">${esc(m.gallo_rojo)}</span>
-        <span class="fight-vs">vs</span>
-        <span class="fight-verde">${esc(m.gallo_verde)}</span>
-      </div>
-      ${badge}
-    </div>`;
-  }).join('');
+function renderHistorial(peleas) {
+  const el = document.getElementById('historialList');
+
+  if (!peleas.length) {
+    el.innerHTML = '<p class="no-data">Sin peleas registradas en esta sala</p>';
+    return;
+  }
+
+  el.innerHTML = `
+    <table class="bets-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Rojo</th>
+          <th>Verde</th>
+          <th>Estado</th>
+          <th>Resultado</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${peleas.map((p, i) => {
+          const rojo = p.nombre_equipo_rojo || p.gallo_rojo || 'Equipo Rojo';
+          const verde = p.nombre_equipo_verde || p.gallo_verde || 'Equipo Verde';
+
+          const resultado = p.resultado === 'rojo'
+            ? `<span class="gallo-rojo">${escapeHtml(rojo)}</span>`
+            : p.resultado === 'verde'
+              ? `<span class="gallo-verde">${escapeHtml(verde)}</span>`
+              : p.resultado === 'tablas'
+                ? 'Tablas'
+                : '-';
+
+          const estadoClass = {
+            lista: 'estado-lista',
+            apostando: 'estado-apostando',
+            en_vivo: 'estado-en-vivo',
+            terminada: 'estado-terminada'
+          }[p.estado] || '';
+
+          return `
+            <tr>
+              <td>${p.numero_pelea || (peleas.length - i)}</td>
+              <td class="gallo-rojo">${escapeHtml(rojo)}</td>
+              <td class="gallo-verde">${escapeHtml(verde)}</td>
+              <td>
+                <span class="estado-badge ${estadoClass}" style="font-size:.74rem;padding:4px 10px">
+                  ${escapeHtml(p.estado || '-')}
+                </span>
+              </td>
+              <td>${resultado}</td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
 }
 
 function renderEquipos(teams, evEstado) {

@@ -79,6 +79,7 @@ async function enterRoom(slug, liveUrl) {
   frame.src = liveUrl || 'about:blank';
 
   connectSocket(slug);
+  await loadRoomState();
   await loadMyBets();
 }
 
@@ -115,16 +116,16 @@ function connectSocket(roomSlug) {
   socket = io({ auth: { token } });
 
   socket.on('connect', () => {
-    socket.emit('join-room', { roomSlug });
+    socket.emit('join-room', roomSlug);
   });
 
-  socket.on('room-state', ({ room, fight, pool, historial }) => {
-    if (room?.facebookliveurl) {
-      document.getElementById('liveFrame').src = room.facebookliveurl;
+  socket.on('room-state', ({ room, activeEvent, current, matches, scores, historial, pool }) => {
+    if (room?.facebook_live_url) {
+      document.getElementById('liveFrame').src = room.facebook_live_url;
     }
 
-    if (fight) {
-      renderFight(fight);
+    if (current) {
+      renderFight(current);
       renderPool(pool || []);
     } else {
       renderNoFight();
@@ -136,87 +137,18 @@ function connectSocket(roomSlug) {
     }
   });
 
-  socket.on('fight-created', ({ fight, message }) => {
-    if (fight) {
-      renderFight(fight);
-      renderPool([]);
-    }
-    showNotificacion(message || 'Nueva pelea disponible');
-  });
-
-  socket.on('fight-updated', ({ fightId, estado, fight, pool, historial, message }) => {
-    if (fight) {
-      renderFight(fight);
-    } else if (currentFight && String(currentFight.id) === String(fightId)) {
-      currentFight.estado = estado;
-      updateEstadoBadge(estado);
-
-      const open = estado === 'apostando';
-      document.getElementById('betForm').style.display = open ? 'block' : 'none';
-      document.getElementById('betClosed').style.display = open ? 'none' : 'block';
-
-      if (!open) {
-        document.getElementById('betClosed').textContent =
-          estado === 'envivo'
-            ? 'La pelea está en vivo. Las apuestas están cerradas.'
-            : 'La pelea ha finalizado.';
-      }
-    }
-
-    if (pool) renderPool(pool);
-    if (historial) renderHistorial(historial);
-    if (message) showNotificacion(message);
+  socket.on('event:match_result', async () => {
+    await loadRoomState();
   });
 
   socket.on('bet-placed', ({ pool, me }) => {
     renderPool(pool || []);
-
     if (me?.puntos != null) {
       user.puntos = me.puntos;
       localStorage.setItem('user', JSON.stringify(user));
       document.getElementById('navPuntos').textContent = me.puntos + ' pts';
       document.getElementById('saldoMini').textContent = me.puntos + ' pts';
     }
-  });
-
-  socket.on('fight-result', ({ fight, historial, message }) => {
-    currentFight = fight || null;
-
-    if (!fight) {
-      renderNoFight();
-      return;
-    }
-
-    updateEstadoBadge('terminada');
-    document.getElementById('betForm').style.display = 'none';
-    document.getElementById('betClosed').style.display = 'block';
-    document.getElementById('betClosed').textContent = 'La pelea ha finalizado.';
-
-    const banner = document.getElementById('resultBanner');
-
-    if (fight.ganador === 'TABLAS') {
-      banner.textContent = 'Resultado: Tablas';
-      banner.className = 'result-banner';
-    } else {
-      const winnerName = fight.ganador === 'A' ? fight.galloa : fight.gallob;
-      banner.textContent = 'Ganador: ' + winnerName;
-      banner.className = 'result-banner ' + (fight.ganador === 'A' ? 'banner-rojo' : 'banner-verde');
-    }
-
-    banner.style.display = 'block';
-
-    if (historial) {
-      renderHistorial(historial);
-    }
-
-    refreshMe();
-    loadMyBets();
-    showNotificacion(message || 'Resultado actualizado');
-  });
-
-  socket.on('historial', (payload) => {
-    const peleas = Array.isArray(payload) ? payload : (payload?.peleas || []);
-    renderHistorial(peleas);
   });
 
   socket.on('chat-message', ({ username, message, system }) => {
@@ -237,6 +169,26 @@ function connectSocket(roomSlug) {
   });
 }
 
+async function loadRoomState() {
+  if (!currentRoom) return;
+
+  const data = await api(`/api/rooms/${encodeURIComponent(currentRoom)}/state`);
+
+  if (data?.room?.facebook_live_url) {
+    document.getElementById('liveFrame').src = data.room.facebook_live_url;
+  }
+
+  if (data?.current) {
+    renderFight(data.current);
+    renderPool(data.pool || []);
+  } else {
+    renderNoFight();
+    renderPool([]);
+  }
+
+  renderHistorial(data.historial || []);
+}
+
 /* ── Render pelea ──────────────────────────────────────────────────────── */
 function renderNoFight() {
   currentFight = null;
@@ -247,15 +199,15 @@ function renderNoFight() {
   document.getElementById('fightCard').style.display = 'none';
   document.getElementById('betForm').style.display = 'none';
   document.getElementById('betClosed').style.display = 'block';
-  document.getElementById('betClosed').textContent = 'Las apuestas aparecerán aquí cuando la pelea esté en estado de apuesta.';
+  document.getElementById('betClosed').textContent = 'Las apuestas aparecerán aquí cuando la pelea esté abierta.';
   document.getElementById('resultBanner').style.display = 'none';
 
-  document.getElementById('btnA').textContent = '—';
-  document.getElementById('btnB').textContent = '—';
+  document.getElementById('btnA').textContent = 'Equipo Rojo';
+  document.getElementById('btnB').textContent = 'Equipo Verde';
   document.getElementById('btnASelect').textContent = 'Rojo';
   document.getElementById('btnBSelect').textContent = 'Verde';
-  document.getElementById('poolA').textContent = '0 pts';
-  document.getElementById('poolB').textContent = '0 pts';
+  document.getElementById('poolA').textContent = '0 pts · 50%';
+  document.getElementById('poolB').textContent = '0 pts · 50%';
   document.getElementById('btnASelect').classList.remove('selected');
   document.getElementById('btnBSelect').classList.remove('selected');
   document.getElementById('betAmount').value = '';
@@ -268,11 +220,14 @@ function renderFight(fight) {
   currentFight = fight;
   selectedGallo = null;
 
-  document.getElementById('fightTitleStage').textContent = `${fight.galloa} vs ${fight.gallob}`;
-  document.getElementById('btnA').textContent = fight.galloa;
-  document.getElementById('btnB').textContent = fight.gallob;
-  document.getElementById('btnASelect').textContent = fight.galloa;
-  document.getElementById('btnBSelect').textContent = fight.gallob;
+  const rojo = fight.nombre_equipo_rojo || 'Equipo Rojo';
+  const verde = fight.nombre_equipo_verde || 'Equipo Verde';
+
+  document.getElementById('fightTitleStage').textContent = `${rojo} vs ${verde}`;
+  document.getElementById('btnA').textContent = rojo;
+  document.getElementById('btnB').textContent = verde;
+  document.getElementById('btnASelect').textContent = rojo;
+  document.getElementById('btnBSelect').textContent = verde;
 
   document.getElementById('noFight').style.display = 'none';
   document.getElementById('fightCard').style.display = 'block';
@@ -280,15 +235,17 @@ function renderFight(fight) {
 
   updateEstadoBadge(fight.estado);
 
-  const open = fight.estado === 'apostando';
+  const open = ['lista', 'apostando'].includes(fight.estado);
   document.getElementById('betForm').style.display = open ? 'block' : 'none';
   document.getElementById('betClosed').style.display = open ? 'none' : 'block';
 
   if (!open) {
     document.getElementById('betClosed').textContent =
-      fight.estado === 'envivo'
+      fight.estado === 'en_vivo'
         ? 'La pelea está en vivo. Las apuestas están cerradas.'
-        : 'La pelea ha finalizado.';
+        : fight.estado === 'terminada'
+          ? 'La pelea ha finalizado.'
+          : 'Las apuestas no están abiertas en este momento.';
   }
 
   document.getElementById('btnASelect').classList.remove('selected');
@@ -299,32 +256,38 @@ function renderFight(fight) {
 function updateEstadoBadge(estado) {
   const badge = document.getElementById('estadoBadge');
   const labels = {
-    apostando: 'Apostando',
-    envivo: 'En vivo',
+    lista: 'Lista',
+    apostando: 'Apostando', 
+    en_vivo: 'En vivo',
     terminada: 'Terminada'
   };
 
   badge.textContent = labels[estado] || estado;
-  badge.className = 'estado-badge estado-' + estado;
+  badge.className = 'estado-badge estado-' + estado.replace('_', '-');
 }
 
 function renderPool(poolData) {
   if (!currentFight) return;
 
-  let totalA = 0;
-  let totalB = 0;
+  let totalRojo = 0;
+  let totalVerde = 0;
 
-  poolData.forEach(p => {
-    if (p.gallo === 'A') totalA = Number(p.total);
-    else if (p.gallo === 'B') totalB = Number(p.total);
+  (poolData || []).forEach(p => {
+    const lado = String(p.gallo || p.lado || '').toUpperCase();
+
+    if (lado === 'R' || lado === 'ROJO') {
+      totalRojo = Number(p.total || p.puntos || 0);
+    } else if (lado === 'V' || lado === 'VERDE') {
+      totalVerde = Number(p.total || p.puntos || 0);
+    }
   });
 
-  const total = totalA + totalB;
-  const pctA = total > 0 ? Math.round((totalA / total) * 100) : 50;
-  const pctB = 100 - pctA;
+  const total = totalRojo + totalVerde;
+  const pctRojo = total > 0 ? Math.round((totalRojo / total) * 100) : 50;
+  const pctVerde = total > 0 ? 100 - pctRojo : 50;
 
-  document.getElementById('poolA').textContent = `${totalA} pts · ${pctA}%`;
-  document.getElementById('poolB').textContent = `${totalB} pts · ${pctB}%`;
+  document.getElementById('poolA').textContent = `${totalRojo} pts · ${pctRojo}%`;
+  document.getElementById('poolB').textContent = `${totalVerde} pts · ${pctVerde}%`;
 }
 
 /* ── Historial ─────────────────────────────────────────────────────────── */
@@ -344,36 +307,40 @@ function renderHistorial(peleas) {
           <th>Rojo</th>
           <th>Verde</th>
           <th>Estado</th>
-          <th>Ganador</th>
+          <th>Resultado</th>
         </tr>
       </thead>
       <tbody>
         ${peleas.map((p, i) => {
-          const ganadorName = p.ganador === 'A'
-            ? `<span class="gallo-rojo">${escapeHtml(p.galloa)}</span>`
-            : p.ganador === 'B'
-              ? `<span class="gallo-verde">${escapeHtml(p.gallob)}</span>`
-              : p.ganador === 'TABLAS'
+          const rojo = p.nombre_equipo_rojo || p.gallo_rojo || 'Equipo Rojo';
+          const verde = p.nombre_equipo_verde || p.gallo_verde || 'Equipo Verde';
+
+          const resultado = p.resultado === 'rojo'
+            ? `<span class="gallo-rojo">${escapeHtml(rojo)}</span>`
+            : p.resultado === 'verde'
+              ? `<span class="gallo-verde">${escapeHtml(verde)}</span>`
+              : p.resultado === 'tablas'
                 ? 'Tablas'
                 : '-';
 
           const estadoClass = {
+            lista: 'estado-lista',
             apostando: 'estado-apostando',
-            envivo: 'estado-envivo',
+            en_vivo: 'estado-en-vivo',
             terminada: 'estado-terminada'
           }[p.estado] || '';
 
           return `
             <tr>
-              <td>${peleas.length - i}</td>
-              <td class="gallo-rojo">${escapeHtml(p.galloa)}</td>
-              <td class="gallo-verde">${escapeHtml(p.gallob)}</td>
+              <td>${p.numero_pelea || (peleas.length - i)}</td>
+              <td class="gallo-rojo">${escapeHtml(rojo)}</td>
+              <td class="gallo-verde">${escapeHtml(verde)}</td>
               <td>
                 <span class="estado-badge ${estadoClass}" style="font-size:.74rem;padding:4px 10px">
-                  ${escapeHtml(p.estado)}
+                  ${escapeHtml(p.estado || '-')}
                 </span>
               </td>
-              <td>${ganadorName}</td>
+              <td>${resultado}</td>
             </tr>
           `;
         }).join('')}
@@ -385,8 +352,8 @@ function renderHistorial(peleas) {
 /* ── Apuestas ──────────────────────────────────────────────────────────── */
 function selectGallo(g) {
   selectedGallo = g;
-  document.getElementById('btnASelect').classList.toggle('selected', g === 'A');
-  document.getElementById('btnBSelect').classList.toggle('selected', g === 'B');
+  document.getElementById('btnASelect').classList.toggle('selected', g === 'R');
+  document.getElementById('btnBSelect').classList.toggle('selected', g === 'V');
 }
 
 function setQuickAmount(amount) {
@@ -395,15 +362,17 @@ function setQuickAmount(amount) {
 
 async function placeBet() {
   if (!currentFight) return showBetMsg('No hay pelea activa', 'error');
-  if (!selectedGallo) return showBetMsg('Selecciona un gallo', 'error');
+  if (!selectedGallo) return showBetMsg('Selecciona rojo o verde', 'error');
 
   const puntos = parseInt(document.getElementById('betAmount').value, 10);
   if (!puntos || puntos <= 0) return showBetMsg('Ingresa un monto válido', 'error');
 
+  const roomId = currentFight.room_id || currentFight.roomid || currentFight.roomId;
+
   const res = await api('/api/bets', {
     method: 'POST',
     body: JSON.stringify({
-      roomid: currentFight.roomid,
+      roomid: roomId,
       peleaid: currentFight.id,
       gallo: selectedGallo,
       puntos
@@ -427,7 +396,7 @@ async function placeBet() {
 async function loadMyBets() {
   const bets = await api('/api/bets/my');
   const activas = bets.filter(b => ['pendiente', 'matcheada'].includes(b.estado));
-  const hist = bets.filter(b => ['cerrada', 'terminada'].includes(b.estado) || b.ganador);
+  const hist = bets.filter(b => ['cerrada', 'terminada', 'pagada'].includes(b.estado) || b.resultado || b.ganador);
 
   renderBetsTable('betsActivas', activas, 'Sin apuestas activas');
   renderBetsTable('betsHistorial', hist, 'Sin historial de apuestas');
@@ -446,29 +415,37 @@ function renderBetsTable(elId, bets, emptyMsg) {
       <thead>
         <tr>
           <th>Pelea</th>
-          <th>Gallo</th>
+          <th>Lado</th>
           <th>Pts</th>
           <th>Estado</th>
         </tr>
       </thead>
       <tbody>
         ${bets.map(b => {
-          const galloName = b.gallo === 'A' ? b.galloa : b.gallob;
-          const galloClass = b.gallo === 'A' ? 'gallo-rojo' : 'gallo-verde';
-          const ganoBadge = b.ganador
-            ? b.ganador === b.gallo
-              ? '<span style="color:var(--verde);font-weight:700">Ganaste</span>'
-              : b.ganador === 'TABLAS'
-                ? '<span style="color:var(--oro);font-weight:700">Tablas</span>'
-                : '<span style="color:var(--rojo);font-weight:700">Perdiste</span>'
+          const rojo = b.nombre_equipo_rojo || b.gallo_rojo || b.galloa || 'Equipo Rojo';
+          const verde = b.nombre_equipo_verde || b.gallo_verde || b.gallob || 'Equipo Verde';
+
+          const lado = String(b.gallo || '').toUpperCase();
+          const ladoName = lado === 'R' ? rojo : lado === 'V' ? verde : '-';
+          const ladoClass = lado === 'R' ? 'gallo-rojo' : lado === 'V' ? 'gallo-verde' : '';
+
+          const resultado = b.resultado || b.ganador || null;
+          const ganoBadge = resultado
+            ? (
+                (resultado === 'rojo' && lado === 'R') || (resultado === 'verde' && lado === 'V')
+                  ? '<span style="color:var(--verde);font-weight:700">Ganaste</span>'
+                  : resultado === 'tablas'
+                    ? '<span style="color:var(--oro);font-weight:700">Tablas</span>'
+                    : '<span style="color:var(--rojo);font-weight:700">Perdiste</span>'
+              )
             : '';
 
           return `
             <tr>
-              <td style="font-size:.8rem">${escapeHtml(b.galloa)} vs ${escapeHtml(b.gallob)}</td>
-              <td class="${galloClass}">${escapeHtml(galloName)}</td>
-              <td>${b.puntostotal}</td>
-              <td style="font-size:.8rem">${escapeHtml(b.estado)} ${ganoBadge}</td>
+              <td style="font-size:.8rem">${escapeHtml(rojo)} vs ${escapeHtml(verde)}</td>
+              <td class="${ladoClass}">${escapeHtml(ladoName)}</td>
+              <td>${Number(b.puntostotal || b.puntos || 0)}</td>
+              <td style="font-size:.8rem">${escapeHtml(b.estado || '-')} ${ganoBadge}</td>
             </tr>
           `;
         }).join('')}
