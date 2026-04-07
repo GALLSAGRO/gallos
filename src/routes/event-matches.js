@@ -88,259 +88,306 @@ router.post('/:matchId/result', admin, async (req, res) => {
   const matchId   = Number(req.params.matchId);
   const resultado = String(req.body.resultado || '').toLowerCase();
 
-  if (!['rojo', 'verde', 'tablas'].includes(resultado)) {
+  if (!['rojo', 'verde', 'tablas'].includes(resultado))
     return res.status(400).json({ error: 'resultado debe ser rojo, verde o tablas' });
-  }
 
   const client = await pool.connect();
-
   try {
     await client.query('BEGIN');
 
     const matchQ = await client.query(
-      `SELECT em.*,
-              e.room_id,
-              e.estado AS ev_estado,
-              e.numero_pelea_actual
+      `SELECT em.*, e.room_id, e.estado AS ev_estado, e.numero_pelea_actual
        FROM event_matches em
        JOIN events e ON e.id = em.event_id
-       WHERE em.id = $1
-       FOR UPDATE`,
+       WHERE em.id = $1 FOR UPDATE`,
+      [matchId]
+    );
+    const match = matchQ.rows[0];
+    if (!match)                        throw new Error('Pelea no encontrada');
+    if (match.ev_estado !== 'activo')  throw new Error('El evento no está activo');
+    if (match.estado === 'terminada')  throw new Error('Esta pelea ya tiene resultado');
+
+    // ✅ Pagar apuestas
+    const COMMISSION = 0.10;
+    const winnerSide = resultado === 'rojo' ? 'R' : resultado === 'verde' ? 'V' : null;
+    const loserSide  = winnerSide === 'R' ? 'V' : winnerSide === 'V' ? 'R' : null;
+
+    const betsQ = await client.query(
+      `SELECT id, user_id, gallo, puntos_total, puntos_matched
+       FROM apuestas WHERE event_match_id = $1 FOR UPDATE`,
       [matchId]
     );
 
-    const match = matchQ.rows[0];
-
-    if (!match) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Pelea no encontrada' });
-    }
-
-    if (match.ev_estado !== 'activo') {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'El evento no esta activo' });
-    }
-
-    if (match.estado === 'terminada') {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Esta pelea ya tiene resultado' });
-    }
-
-    const pts = { rojo: 0, verde: 0 };
-    if (resultado === 'rojo') pts.rojo = 3;
-    if (resultado === 'verde') pts.verde = 3;
     if (resultado === 'tablas') {
-      pts.rojo = 1;
-      pts.verde = 1;
+      // Devolver todo a todos
+      for (const bet of betsQ.rows) {
+        const total = Number(bet.puntos_total || 0);
+        if (total > 0)
+          await client.query(
+            `UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`,
+            [total, bet.user_id]
+          );
+        await client.query(`UPDATE apuestas SET estado = 'tabla' WHERE id = $1`, [bet.id]);
+      }
+    } else {
+      let totalW = 0, totalL = 0;
+      for (const b of betsQ.rows) {
+        const m = Number(b.puntos_matched || 0);
+        if (b.gallo === winnerSide) totalW += m;
+        if (b.gallo === loserSide)  totalL += m;
+      }
+
+      for (const bet of betsQ.rows) {
+        const total     = Number(bet.puntos_total   || 0);
+        const matched   = Number(bet.puntos_matched || 0);
+        const unmatched = Number((total - matched).toFixed(2));
+
+        if (bet.gallo === winnerSide) {
+          let payout = unmatched;
+          if (matched > 0 && totalW > 0) {
+            const gross = Number(((matched / totalW) * totalL).toFixed(2));
+            const net   = Number((gross * (1 - COMMISSION)).toFixed(2));
+            payout      = Number((unmatched + matched + net).toFixed(2));
+          }
+          if (payout > 0)
+            await client.query(
+              `UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`,
+              [payout, bet.user_id]
+            );
+          await client.query(
+            `UPDATE apuestas
+             SET estado = CASE WHEN puntos_matched > 0 THEN 'ganada' ELSE 'devuelta' END
+             WHERE id = $1`,
+            [bet.id]
+          );
+
+        } else if (bet.gallo === loserSide) {
+          if (unmatched > 0)
+            await client.query(
+              `UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`,
+              [unmatched, bet.user_id]
+            );
+          await client.query(
+            `UPDATE apuestas
+             SET estado = CASE WHEN puntos_matched > 0 THEN 'perdida' ELSE 'devuelta' END
+             WHERE id = $1`,
+            [bet.id]
+          );
+
+        } else {
+          if (total > 0)
+            await client.query(
+              `UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`,
+              [total, bet.user_id]
+            );
+          await client.query(`UPDATE apuestas SET estado = 'devuelta' WHERE id = $1`, [bet.id]);
+        }
+      }
     }
+
+    // Puntos y marcador de equipos (igual que tenías)
+    const pts = { rojo: 0, verde: 0 };
+    if (resultado === 'rojo')   { pts.rojo = 3; }
+    if (resultado === 'verde')  { pts.verde = 3; }
+    if (resultado === 'tablas') { pts.rojo = 1; pts.verde = 1; }
 
     await client.query(
       `UPDATE event_matches
-       SET estado = 'terminada',
-           resultado = $1,
-           puntos_rojo = $2,
-           puntos_verde = $3,
-           finished_at = NOW()
+       SET estado = 'terminada', resultado = $1,
+           puntos_rojo = $2, puntos_verde = $3, finished_at = NOW()
        WHERE id = $4`,
       [resultado, pts.rojo, pts.verde, matchId]
     );
 
     if (resultado === 'rojo' && match.equipo_rojo_id) {
-      await client.query(
-        `UPDATE event_teams
-         SET puntos = puntos + 3,
-             ganadas = ganadas + 1
-         WHERE id = $1`,
-        [match.equipo_rojo_id]
-      );
-
-      if (match.equipo_verde_id) {
-        await client.query(
-          `UPDATE event_teams
-           SET perdidas = perdidas + 1
-           WHERE id = $1`,
-          [match.equipo_verde_id]
-        );
-      }
+      await client.query(`UPDATE event_teams SET puntos = puntos + 3, ganadas = ganadas + 1 WHERE id = $1`, [match.equipo_rojo_id]);
+      if (match.equipo_verde_id)
+        await client.query(`UPDATE event_teams SET perdidas = perdidas + 1 WHERE id = $1`, [match.equipo_verde_id]);
     } else if (resultado === 'verde' && match.equipo_verde_id) {
-      await client.query(
-        `UPDATE event_teams
-         SET puntos = puntos + 3,
-             ganadas = ganadas + 1
-         WHERE id = $1`,
-        [match.equipo_verde_id]
-      );
-
-      if (match.equipo_rojo_id) {
-        await client.query(
-          `UPDATE event_teams
-           SET perdidas = perdidas + 1
-           WHERE id = $1`,
-          [match.equipo_rojo_id]
-        );
-      }
+      await client.query(`UPDATE event_teams SET puntos = puntos + 3, ganadas = ganadas + 1 WHERE id = $1`, [match.equipo_verde_id]);
+      if (match.equipo_rojo_id)
+        await client.query(`UPDATE event_teams SET perdidas = perdidas + 1 WHERE id = $1`, [match.equipo_rojo_id]);
     } else if (resultado === 'tablas') {
-      if (match.equipo_rojo_id) {
-        await client.query(
-          `UPDATE event_teams
-           SET puntos = puntos + 1,
-               empatadas = empatadas + 1
-           WHERE id = $1`,
-          [match.equipo_rojo_id]
-        );
-      }
-
-      if (match.equipo_verde_id) {
-        await client.query(
-          `UPDATE event_teams
-           SET puntos = puntos + 1,
-               empatadas = empatadas + 1
-           WHERE id = $1`,
-          [match.equipo_verde_id]
-        );
-      }
+      if (match.equipo_rojo_id)
+        await client.query(`UPDATE event_teams SET puntos = puntos + 1, empatadas = empatadas + 1 WHERE id = $1`, [match.equipo_rojo_id]);
+      if (match.equipo_verde_id)
+        await client.query(`UPDATE event_teams SET puntos = puntos + 1, empatadas = empatadas + 1 WHERE id = $1`, [match.equipo_verde_id]);
     }
 
+    // Avanzar a la siguiente pelea
     const nextQ = await client.query(
-      `SELECT id
-       FROM event_matches
+      `SELECT id FROM event_matches
        WHERE event_id = $1 AND estado = 'pendiente'
-       ORDER BY orden ASC
-       LIMIT 1`,
+       ORDER BY orden ASC LIMIT 1`,
       [match.event_id]
     );
-
     let siguiente = null;
-
     if (nextQ.rows[0]) {
-      await client.query(
-        `UPDATE event_matches
-         SET estado = 'lista'
-         WHERE id = $1`,
-        [nextQ.rows[0].id]
-      );
+      await client.query(`UPDATE event_matches SET estado = 'lista' WHERE id = $1`, [nextQ.rows[0].id]);
       siguiente = nextQ.rows[0].id;
     }
 
     await client.query(
-      `UPDATE events
-       SET numero_pelea_actual = numero_pelea_actual + 1
-       WHERE id = $1`,
+      `UPDATE events SET numero_pelea_actual = numero_pelea_actual + 1 WHERE id = $1`,
       [match.event_id]
     );
 
     await client.query('COMMIT');
 
+    // Emitir socket
     const sockets = req.app.get('sockets');
-    const roomQ = await pool.query(
-      `SELECT slug FROM rooms WHERE id = $1`,
-      [match.room_id]
-    );
-
+    const roomQ = await pool.query(`SELECT slug FROM rooms WHERE id = $1`, [match.room_id]);
     if (sockets && roomQ.rows[0]) {
       sockets.emitMatchResult(roomQ.rows[0].slug, {
-        event_id: match.event_id,
-        match_id: matchId,
-        resultado,
-        puntos_rojo: pts.rojo,
-        puntos_verde: pts.verde,
-        numero_pelea: match.numero_pelea,
-        siguiente
+        event_id: match.event_id, match_id: matchId,
+        resultado, puntos_rojo: pts.rojo, puntos_verde: pts.verde,
+        numero_pelea: match.numero_pelea, siguiente
       });
+      if (typeof sockets.emitRoomStateBySlug === 'function') sockets.emitRoomStateBySlug(roomQ.rows[0].slug);
     }
 
-    res.json({
-      ok: true,
-      resultado,
-      puntos_rojo: pts.rojo,
-      puntos_verde: pts.verde,
-      siguiente
-    });
+    res.json({ ok: true, resultado, puntos_rojo: pts.rojo, puntos_verde: pts.verde, siguiente });
   } catch (e) {
     await client.query('ROLLBACK');
     console.error('POST /api/event-matches/:matchId/result', e);
-    res.status(500).json({ error: 'Error al declarar resultado' });
-  } finally {
-    client.release();
-  }
+    res.status(500).json({ error: e.message || 'Error al declarar resultado' });
+  } finally { client.release(); }
 });
 
 // POST /api/event-matches/:id/close-betting
-router.post('/:id/close-betting', async (req, res) => {
+router.post('/:id/close-betting', admin, async (req, res) => {
+  const client = await pool.connect();
   try {
+    await client.query('BEGIN');
     const id = Number(req.params.id);
 
-    const q = await pool.query(
-      `UPDATE event_matches
-       SET estado = 'en_vivo'
-       WHERE id = $1
-         AND estado IN ('lista', 'apostando')
-       RETURNING *`,
+    const matchQ = await client.query(
+      `SELECT em.*, e.room_id FROM event_matches em
+       JOIN events e ON e.id = em.event_id
+       WHERE em.id = $1 FOR UPDATE`,
       [id]
     );
+    const match = matchQ.rows[0];
+    if (!match) throw new Error('Pelea no encontrada');
+    if (!['lista', 'apostando'].includes(match.estado))
+      throw new Error('La pelea no está abierta para apuestas');
 
-    if (!q.rows[0]) {
-      return res.status(400).json({ error: 'La pelea no está abierta para apuestas' });
-    }
-
-    res.json({ ok: true, match: q.rows[0] });
-  } catch (err) {
-    console.error('POST /api/event-matches/:id/close-betting error:', err);
-    res.status(500).json({ error: 'Error al cerrar apuestas' });
-  }
-});
-
-// POST /api/event-matches/:matchId/skip - poner en espera
-router.post('/:matchId/skip', admin, async (req, res) => {
-  const matchId = Number(req.params.matchId);
-
-  try {
-    const matchQ = await pool.query(
-      `SELECT em.*, e.room_id
-       FROM event_matches em
-       JOIN events e ON e.id = em.event_id
-       WHERE em.id = $1`,
-      [matchId]
+    // Devolver puntos no matcheados
+    const betsQ = await client.query(
+      `SELECT id, user_id, puntos_total, puntos_matched
+       FROM apuestas WHERE event_match_id = $1 FOR UPDATE`,
+      [id]
     );
-
-    if (!matchQ.rows[0]) {
-      return res.status(404).json({ error: 'Pelea no encontrada' });
-    }
-
-    if (matchQ.rows[0].estado === 'terminada') {
-      return res.status(400).json({ error: 'No puedes saltar una pelea ya terminada' });
-    }
-
-    await pool.query(
-      `UPDATE event_matches
-       SET estado = 'en_espera'
-       WHERE id = $1`,
-      [matchId]
-    );
-
-    const next = await pool.query(
-      `SELECT id
-       FROM event_matches
-       WHERE event_id = $1 AND estado = 'pendiente'
-       ORDER BY orden ASC
-       LIMIT 1`,
-      [matchQ.rows[0].event_id]
-    );
-
-    if (next.rows[0]) {
-      await pool.query(
-        `UPDATE event_matches
-         SET estado = 'lista'
+    for (const bet of betsQ.rows) {
+      const total     = Number(bet.puntos_total   || 0);
+      const matched   = Number(bet.puntos_matched || 0);
+      const pending   = Number((total - matched).toFixed(2));
+      if (pending > 0) {
+        await client.query(
+          `UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`,
+          [pending, bet.user_id]
+        );
+        await client.query(
+          `UPDATE apuestas SET puntos_total = puntos_matched WHERE id = $1`,
+          [bet.id]
+        );
+      }
+      await client.query(
+        `UPDATE apuestas
+         SET estado = CASE WHEN puntos_matched > 0 THEN 'matcheada' ELSE 'cerrada' END
          WHERE id = $1`,
-        [next.rows[0].id]
+        [bet.id]
       );
+    }
+
+    await client.query(
+      `UPDATE event_matches SET estado = 'en_vivo' WHERE id = $1`, [id]
+    );
+
+    await client.query('COMMIT');
+
+    // Emitir refresh
+    const sockets = req.app.get('sockets');
+    const roomQ = await pool.query(`SELECT slug FROM rooms WHERE id = $1`, [match.room_id]);
+    if (sockets && roomQ.rows[0]) {
+      if (typeof sockets.emitRoomStateBySlug === 'function') sockets.emitRoomStateBySlug(roomQ.rows[0].slug);
+      if (typeof sockets.emitRoomRefresh     === 'function') sockets.emitRoomRefresh(roomQ.rows[0].slug);
     }
 
     res.json({ ok: true });
   } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('POST /api/event-matches/:id/close-betting', e);
+    res.status(500).json({ error: e.message || 'Error al cerrar apuestas' });
+  } finally { client.release(); }
+});
+
+// POST /api/event-matches/:matchId/skip - poner en espera
+router.post('/:matchId/skip', admin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const matchId = Number(req.params.matchId);
+
+    const matchQ = await client.query(
+      `SELECT em.*, e.room_id FROM event_matches em
+       JOIN events e ON e.id = em.event_id
+       WHERE em.id = $1 FOR UPDATE`,
+      [matchId]
+    );
+    const match = matchQ.rows[0];
+    if (!match) throw new Error('Pelea no encontrada');
+    if (match.estado === 'terminada') throw new Error('No puedes saltar una pelea ya terminada');
+
+    // ✅ Devolver puntos no matcheados
+    const betsQ = await client.query(
+      `SELECT id, user_id, puntos_total, puntos_matched
+       FROM apuestas WHERE event_match_id = $1 FOR UPDATE`,
+      [matchId]
+    );
+    for (const bet of betsQ.rows) {
+      const total   = Number(bet.puntos_total   || 0);
+      const matched = Number(bet.puntos_matched || 0);
+      const refund  = Number((total - matched).toFixed(2));
+      if (refund > 0)
+        await client.query(
+          `UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`,
+          [refund, bet.user_id]
+        );
+      await client.query(
+        `UPDATE apuestas
+         SET estado = CASE WHEN puntos_matched > 0 THEN estado ELSE 'saltada' END
+         WHERE id = $1`,
+        [bet.id]
+      );
+    }
+
+    await client.query(`UPDATE event_matches SET estado = 'en_espera' WHERE id = $1`, [matchId]);
+
+    const next = await client.query(
+      `SELECT id FROM event_matches
+       WHERE event_id = $1 AND estado = 'pendiente'
+       ORDER BY orden ASC LIMIT 1`,
+      [match.event_id]
+    );
+    if (next.rows[0])
+      await client.query(`UPDATE event_matches SET estado = 'lista' WHERE id = $1`, [next.rows[0].id]);
+
+    await client.query('COMMIT');
+
+    const sockets = req.app.get('sockets');
+    const roomQ = await pool.query(`SELECT slug FROM rooms WHERE id = $1`, [match.room_id]);
+    if (sockets && roomQ.rows[0]) {
+      if (typeof sockets.emitRoomStateBySlug === 'function') sockets.emitRoomStateBySlug(roomQ.rows[0].slug);
+      if (typeof sockets.emitRoomRefresh     === 'function') sockets.emitRoomRefresh(roomQ.rows[0].slug);
+    }
+
+    res.json({ ok: true });
+  } catch (e) {
+    await client.query('ROLLBACK');
     console.error('POST /api/event-matches/:matchId/skip', e);
-    res.status(500).json({ error: 'Error al saltar pelea' });
-  }
+    res.status(500).json({ error: e.message || 'Error al saltar pelea' });
+  } finally { client.release(); }
 });
 
 // POST /api/event-matches/:matchId/reactivate - recuperar pelea en espera
