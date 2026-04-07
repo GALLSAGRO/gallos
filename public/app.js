@@ -78,7 +78,6 @@ async function refreshMe() {
   if (adminLink) adminLink.style.display = user.is_admin ? 'inline-block' : 'none';
 }
 
-/* ── Salas ─────────────────────────────────────────────────────────────── */
 async function loadRooms() {
   const rooms = await api('/api/rooms');
   const list = document.getElementById('roomList');
@@ -156,7 +155,6 @@ function backToRooms() {
   renderNoFight();
 }
 
-/* ── Socket ────────────────────────────────────────────────────────────── */
 function connectSocket(roomSlug) {
   if (socket) {
     socket.disconnect();
@@ -169,7 +167,7 @@ function connectSocket(roomSlug) {
     socket.emit('join-room', roomSlug);
   });
 
-  socket.on('room-state', ({ room, activeEvent, current, matches, scores, historial, pool }) => {
+  socket.on('room-state', ({ room, activeEvent, current, historial, pool }) => {
     const frame = document.getElementById('liveFrame');
 
     currentEvent = activeEvent || null;
@@ -186,9 +184,7 @@ function connectSocket(roomSlug) {
       renderPool([], null);
     }
 
-    if (historial) {
-      renderHistorial(historial);
-    }
+    if (historial) renderHistorial(historial);
   });
 
   socket.on('event:match_result', async () => {
@@ -261,7 +257,6 @@ async function loadRoomState() {
   renderHistorial(data.historial || []);
 }
 
-/* ── Render pelea ──────────────────────────────────────────────────────── */
 function renderNoFight() {
   currentFight = null;
   selectedGallo = null;
@@ -270,6 +265,7 @@ function renderNoFight() {
   const noFight = document.getElementById('noFight');
   const fightCard = document.getElementById('fightCard');
   const betForm = document.getElementById('betForm');
+  const placeBetBtn = document.getElementById('placeBetBtn');
   const betClosed = document.getElementById('betClosed');
   const resultBanner = document.getElementById('resultBanner');
   const btnA = document.getElementById('btnA');
@@ -285,6 +281,7 @@ function renderNoFight() {
   if (noFight) noFight.style.display = 'block';
   if (fightCard) fightCard.style.display = 'none';
   if (betForm) betForm.style.display = 'none';
+  if (placeBetBtn) placeBetBtn.disabled = true;
   if (betClosed) {
     betClosed.style.display = 'block';
     betClosed.textContent = 'Las apuestas aparecerán aquí cuando la pelea esté abierta.';
@@ -302,8 +299,8 @@ function renderNoFight() {
     btnBSelect.classList.remove('selected');
   }
 
-  if (poolA) poolA.textContent = '0 pts · 50%';
-  if (poolB) poolB.textContent = '0 pts · 50%';
+  if (poolA) poolA.textContent = '0 pts';
+  if (poolB) poolB.textContent = '0 pts';
   if (betAmount) betAmount.value = '';
 
   if (estadoBadge) {
@@ -328,6 +325,7 @@ function renderFight(fight) {
   const fightCard = document.getElementById('fightCard');
   const resultBanner = document.getElementById('resultBanner');
   const betForm = document.getElementById('betForm');
+  const placeBetBtn = document.getElementById('placeBetBtn');
   const betClosed = document.getElementById('betClosed');
   const betAmount = document.getElementById('betAmount');
 
@@ -345,9 +343,10 @@ function renderFight(fight) {
 
   const open = ['lista', 'apostando'].includes(fight.estado);
   if (betForm) betForm.style.display = open ? 'block' : 'none';
+  if (placeBetBtn) placeBetBtn.disabled = !open;
+
   if (betClosed) {
     betClosed.style.display = open ? 'none' : 'block';
-
     if (!open) {
       betClosed.textContent =
         fight.estado === 'en_vivo'
@@ -391,12 +390,8 @@ function renderPool(poolData, fight = null) {
 
   (poolData || []).forEach(p => {
     const lado = String(p.gallo || p.lado || p.side || '').toUpperCase();
-
-    if (lado === 'R' || lado === 'ROJO') {
-      totalRojo += Number(p.total || p.puntos || p.puntos_total || 0);
-    } else if (lado === 'V' || lado === 'VERDE') {
-      totalVerde += Number(p.total || p.puntos || p.puntos_total || 0);
-    }
+    if (lado === 'R' || lado === 'ROJO') totalRojo += Number(p.total || p.puntos || p.puntos_total || 0);
+    if (lado === 'V' || lado === 'VERDE') totalVerde += Number(p.total || p.puntos || p.puntos_total || 0);
   });
 
   if (!totalRojo && !totalVerde && fight) {
@@ -404,15 +399,10 @@ function renderPool(poolData, fight = null) {
     totalVerde = Number(fight.puntos_verde || 0);
   }
 
-  const total = totalRojo + totalVerde;
-  const pctRojo = total > 0 ? Math.round((totalRojo / total) * 100) : 50;
-  const pctVerde = total > 0 ? 100 - pctRojo : 50;
-
-  poolA.textContent = `${totalRojo} pts · ${pctRojo}%`;
-  poolB.textContent = `${totalVerde} pts · ${pctVerde}%`;
+  poolA.textContent = `${totalRojo} pts`;
+  poolB.textContent = `${totalVerde} pts`;
 }
 
-/* ── Historial ─────────────────────────────────────────────────────────── */
 function renderHistorial(peleas) {
   const el = document.getElementById('historialList');
   if (!el) return;
@@ -459,7 +449,6 @@ function renderHistorial(peleas) {
   `;
 }
 
-/* ── Apuestas ──────────────────────────────────────────────────────────── */
 function selectGallo(g) {
   selectedGallo = g;
 
@@ -486,6 +475,11 @@ async function placeBet() {
   const roomState = await api(`/api/rooms/${encodeURIComponent(currentRoom)}`);
   if (!roomState?.room?.id || !roomState?.activeEvent?.id || !roomState?.current?.id) {
     return showBetMsg('No se pudo obtener el estado actual de la sala', 'error');
+  }
+
+  const estado = String(roomState.current.estado || '');
+  if (!['lista', 'apostando'].includes(estado)) {
+    return showBetMsg('Las apuestas están cerradas para esta pelea', 'error');
   }
 
   const res = await api('/api/bets', {
@@ -523,10 +517,13 @@ async function loadMyBets() {
     return;
   }
 
-  const activas = bets.filter(b => ['pendiente', 'matcheada', 'matched'].includes(String(b.estado || '').toLowerCase()));
+  const activas = bets.filter(b =>
+    ['pendiente', 'matcheada', 'matched'].includes(String(b.estado || '').toLowerCase()) &&
+    ['sin_resultado', ''].includes(String(b.resultado || '').toLowerCase())
+  );
+
   const hist = bets.filter(b =>
-    ['cerrada', 'terminada', 'pagada', 'settled'].includes(String(b.estado || '').toLowerCase()) ||
-    b.resultado
+    !(['sin_resultado', ''].includes(String(b.resultado || '').toLowerCase()))
   );
 
   renderBetsTable('betsActivas', activas, 'Sin apuestas activas');
@@ -561,23 +558,32 @@ function renderBetsTable(elId, bets, emptyMsg) {
           const ladoName = lado === 'R' ? rojo : lado === 'V' ? verde : '-';
           const ladoClass = lado === 'R' ? 'gallo-rojo' : lado === 'V' ? 'gallo-verde' : '';
 
-          const resultado = b.resultado || null;
-          const ganoBadge = resultado
-            ? (
-                (resultado === 'rojo' && lado === 'R') || (resultado === 'verde' && lado === 'V')
-                  ? '<span style="color:var(--verde);font-weight:700">Ganaste</span>'
-                  : resultado === 'tablas'
-                    ? '<span style="color:var(--oro);font-weight:700">Tablas</span>'
-                    : '<span style="color:var(--rojo);font-weight:700">Perdiste</span>'
-              )
-            : '';
+          const resultadoRaw = String(b.resultado || '').toLowerCase().trim();
+
+          let ganoBadge = '';
+          const esRojo = ['rojo', 'r'].includes(resultadoRaw);
+          const esVerde = ['verde', 'v'].includes(resultadoRaw);
+          const esTablas = ['tablas', 'empate', 'draw'].includes(resultadoRaw);
+          const esPendiente = ['', 'sin_resultado', 'pendiente', 'lista', 'apostando', 'en_vivo'].includes(resultadoRaw);
+
+          if (esPendiente) {
+            ganoBadge = '<span style="color:#999;font-weight:700">Pendiente</span>';
+          } else if (esTablas) {
+            ganoBadge = '<span style="color:var(--warning);font-weight:700">Tablas</span>';
+          } else if ((esRojo && lado === 'R') || (esVerde && lado === 'V')) {
+            ganoBadge = '<span style="color:var(--verde);font-weight:700">Ganaste</span>';
+          } else if ((esRojo && lado === 'V') || (esVerde && lado === 'R')) {
+            ganoBadge = '<span style="color:var(--rojo);font-weight:700">Perdiste</span>';
+          } else {
+            ganoBadge = '<span style="color:#999;font-weight:700">Pendiente</span>';
+          }
 
           return `
             <tr>
               <td style="font-size:.8rem">${escapeHtml(rojo)} vs ${escapeHtml(verde)}</td>
               <td class="${ladoClass}">${escapeHtml(ladoName)}</td>
               <td>${Number(b.puntos_total || 0)}</td>
-              <td style="font-size:.8rem">${escapeHtml(b.estado || '-')} ${ganoBadge}</td>
+              <td style="font-size:.8rem">${escapeHtml(b.estado || '-')} · ${ganoBadge}</td>
             </tr>
           `;
         }).join('')}
@@ -597,7 +603,6 @@ function switchBetsTab(tab, btn) {
   if (betsHistorial) betsHistorial.style.display = tab === 'historial' ? 'block' : 'none';
 }
 
-/* ── Chat ──────────────────────────────────────────────────────────────── */
 function appendChatMsg({ username, message, system }) {
   const box = document.getElementById('chatMessages');
   if (!box) return;
@@ -634,7 +639,6 @@ function sendChat() {
   input.value = '';
 }
 
-/* ── Retiros ───────────────────────────────────────────────────────────── */
 function abrirRetiro() {
   const retiroMsg = document.getElementById('retiroMsg');
   const retiroAmount = document.getElementById('retiroAmount');
@@ -752,7 +756,6 @@ async function loadMisRetiros() {
   `;
 }
 
-/* ── Helpers ───────────────────────────────────────────────────────────── */
 function showBetMsg(msg, type) {
   const el = document.getElementById('betMsg');
   if (!el) return;

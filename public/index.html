@@ -144,8 +144,8 @@
               <p class="label center">Selecciona un gallo</p>
 
               <div class="gallo-btns gallo-btns-vertical">
-                <button class="btn-gallo-a" onclick="selectGallo('A')" id="btnASelect">Rojo</button>
-                <button class="btn-gallo-b" onclick="selectGallo('B')" id="btnBSelect">Verde</button>
+                <button class="btn-gallo-a" onclick="selectGallo('R')" id="btnASelect">Rojo</button>
+                <button class="btn-gallo-b" onclick="selectGallo('V')" id="btnBSelect">Verde</button>
               </div>
 
               <p class="label center">Selecciona una cantidad</p>
@@ -160,7 +160,7 @@
               </div>
 
               <input type="number" id="betAmount" placeholder="Otra cantidad" min="1" />
-              <button class="btn-primary btn-play" onclick="placeBet()">Jugar</button>
+              <button id="placeBetBtn" class="btn-primary btn-play" onclick="placeBet()">Jugar</button>
               <p id="betMsg" class="bet-msg"></p>
             </div>
 

@@ -725,3 +725,20 @@ input:focus { outline: none; border-color: var(--rojo); }
     padding: 20px;
   }
 }
+
+.btn-primary:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+  filter: grayscale(.15);
+}
+
+.btn-gallo-a,
+.btn-gallo-b {
+  position: relative;
+  z-index: 1;
+}
+
+.bet-form {
+  position: relative;
+  z-index: 2;
+}
