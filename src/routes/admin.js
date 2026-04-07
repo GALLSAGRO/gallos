@@ -32,16 +32,15 @@ async function emitRoomRefresh(req, roomIdOrSlug) {
     }
     if (!room) return;
 
-    emitSafe(() => { if (typeof sockets.emitRoomStateBySlug === 'function')  sockets.emitRoomStateBySlug(room.slug); });
-    emitSafe(() => { if (typeof sockets.emitHistoryBySlug === 'function')    sockets.emitHistoryBySlug(room.slug); });
-    emitSafe(() => { if (typeof sockets.emitPoolByRoomId === 'function')     sockets.emitPoolByRoomId(room.id); });
-    emitSafe(() => { if (typeof sockets.emitRoomRefresh === 'function')      sockets.emitRoomRefresh(room.slug); });
+    emitSafe(() => { if (typeof sockets.emitRoomStateBySlug === 'function') sockets.emitRoomStateBySlug(room.slug); });
+    emitSafe(() => { if (typeof sockets.emitHistoryBySlug === 'function')   sockets.emitHistoryBySlug(room.slug); });
+    emitSafe(() => { if (typeof sockets.emitPoolByRoomId === 'function')    sockets.emitPoolByRoomId(room.id); });
+    emitSafe(() => { if (typeof sockets.emitRoomRefresh === 'function')     sockets.emitRoomRefresh(room.slug); });
   } catch (e) { console.error('emitRoomRefresh error:', e); }
 }
 
 // -------------------------------------------------------
-// Liquidar ganador (winner_side: 'R' o 'V')
-// Aplica a apuestas ligadas a event_match_id o pelea_id
+// LEGACY: Liquidar ganador peleas (pelea_id)
 // -------------------------------------------------------
 async function settleFightResult(client, fightId, winnerSide) {
   const fightQ = await client.query(
@@ -73,62 +72,38 @@ async function settleFightResult(client, fightId, winnerSide) {
     if (bet.gallo === loserGallo)  totalLoserMatched  += matched;
   }
 
-  const commissionPct        = 0.10;
-  const totalCommission      = Number((totalLoserMatched * commissionPct).toFixed(2));
-  const distributableLoserPool = Number((totalLoserMatched - totalCommission).toFixed(2));
+  const commissionPct = 0.10;
   const updates = [];
 
   for (const bet of bets) {
-    const total    = Number(bet.puntos_total   || 0);
-    const matched  = Number(bet.puntos_matched || 0);
+    const total     = Number(bet.puntos_total   || 0);
+    const matched   = Number(bet.puntos_matched || 0);
     const unmatched = Number((total - matched).toFixed(2));
 
     if (bet.gallo === winnerGallo) {
-      let grossProfit = 0, netProfit = 0, commissionAmount = 0;
       let payout = unmatched;
-
       if (matched > 0 && totalWinnerMatched > 0) {
-        grossProfit      = Number(((matched / totalWinnerMatched) * totalLoserMatched).toFixed(2));
-        commissionAmount = Number((grossProfit * commissionPct).toFixed(2));
-        netProfit        = Number((grossProfit - commissionAmount).toFixed(2));
-        payout           = Number((unmatched + matched + netProfit).toFixed(2));
+        const grossProfit      = Number(((matched / totalWinnerMatched) * totalLoserMatched).toFixed(2));
+        const commissionAmount = Number((grossProfit * commissionPct).toFixed(2));
+        const netProfit        = Number((grossProfit - commissionAmount).toFixed(2));
+        payout = Number((unmatched + matched + netProfit).toFixed(2));
       }
-
-      await client.query(
-        `UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`,
-        [payout, bet.user_id]
-      );
-      await client.query(
-        `UPDATE apuestas SET estado = 'ganada' WHERE id = $1`,
-        [bet.id]
-      );
+      await client.query(`UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`, [payout, bet.user_id]);
+      await client.query(`UPDATE apuestas SET estado = 'ganada' WHERE id = $1`, [bet.id]);
       updates.push({ betId: bet.id, userId: bet.user_id, status: 'ganada', payout });
 
     } else if (bet.gallo === loserGallo) {
       if (unmatched > 0) {
-        await client.query(
-          `UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`,
-          [unmatched, bet.user_id]
-        );
+        await client.query(`UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`, [unmatched, bet.user_id]);
       }
-      await client.query(
-        `UPDATE apuestas SET estado = 'perdida' WHERE id = $1`,
-        [bet.id]
-      );
+      await client.query(`UPDATE apuestas SET estado = 'perdida' WHERE id = $1`, [bet.id]);
       updates.push({ betId: bet.id, userId: bet.user_id, status: 'perdida' });
 
     } else {
-      // apuesta sin cruzar — devolver todo
       if (total > 0) {
-        await client.query(
-          `UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`,
-          [total, bet.user_id]
-        );
+        await client.query(`UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`, [total, bet.user_id]);
       }
-      await client.query(
-        `UPDATE apuestas SET estado = 'devuelta' WHERE id = $1`,
-        [bet.id]
-      );
+      await client.query(`UPDATE apuestas SET estado = 'devuelta' WHERE id = $1`, [bet.id]);
       updates.push({ betId: bet.id, userId: bet.user_id, status: 'devuelta', payout: total });
     }
   }
@@ -137,12 +112,11 @@ async function settleFightResult(client, fightId, winnerSide) {
     `UPDATE peleas SET estado = 'finalizada', ganador = $2, ended_at = NOW() WHERE id = $1`,
     [fightId, winnerGallo]
   );
-
-  return { fightId, roomId: fight.room_id, winner: winnerGallo, totalCommission, distributableLoserPool, updates };
+  return { fightId, roomId: fight.room_id, winner: winnerGallo, updates };
 }
 
 // -------------------------------------------------------
-// Declarar tablas
+// LEGACY: Declarar tablas (pelea_id)
 // -------------------------------------------------------
 async function settleFightDraw(client, fightId) {
   const fightQ = await client.query(
@@ -164,7 +138,6 @@ async function settleFightDraw(client, fightId) {
     }
     await client.query(`UPDATE apuestas SET estado = 'tabla' WHERE id = $1`, [bet.id]);
   }
-
   await client.query(
     `UPDATE peleas SET estado = 'finalizada', ganador = 'TABLA', ended_at = NOW() WHERE id = $1`,
     [fightId]
@@ -173,7 +146,7 @@ async function settleFightDraw(client, fightId) {
 }
 
 // -------------------------------------------------------
-// Cerrar apuestas y devolver no cruzadas
+// LEGACY: Cerrar apuestas (pelea_id)
 // -------------------------------------------------------
 async function refundPendingAndClose(client, fightId) {
   const fightQ = await client.query(
@@ -188,9 +161,9 @@ async function refundPendingAndClose(client, fightId) {
     [fightId]
   );
   for (const bet of betsQ.rows) {
-    const total    = Number(bet.puntos_total   || 0);
-    const matched  = Number(bet.puntos_matched || 0);
-    const pending  = Number((total - matched).toFixed(2));
+    const total   = Number(bet.puntos_total   || 0);
+    const matched = Number(bet.puntos_matched || 0);
+    const pending = Number((total - matched).toFixed(2));
     if (pending > 0) {
       await client.query(`UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`, [pending, bet.user_id]);
     }
@@ -199,12 +172,181 @@ async function refundPendingAndClose(client, fightId) {
       [bet.id]
     );
   }
-
   await client.query(
     `UPDATE peleas SET estado = 'cerrada', ended_at = NOW() WHERE id = $1`,
     [fightId]
   );
   return { fightId, roomId: fight.room_id };
+}
+
+// -------------------------------------------------------
+// NUEVO: Cerrar apuestas event_match y devolver no matcheadas
+// -------------------------------------------------------
+async function refundPendingEventMatchAndClose(client, eventMatchId) {
+  const matchQ = await client.query(
+    `SELECT em.id, em.event_id, e.room_id, em.estado
+     FROM event_matches em
+     JOIN events e ON e.id = em.event_id
+     WHERE em.id = $1 FOR UPDATE`,
+    [eventMatchId]
+  );
+  const match = matchQ.rows[0];
+  if (!match) throw new Error('Pelea no encontrada');
+
+  const betsQ = await client.query(
+    `SELECT id, user_id, puntos_total, puntos_matched
+     FROM apuestas WHERE event_match_id = $1 FOR UPDATE`,
+    [eventMatchId]
+  );
+
+  for (const bet of betsQ.rows) {
+    const total   = Number(bet.puntos_total   || 0);
+    const matched = Number(bet.puntos_matched || 0);
+    const pending = Number((total - matched).toFixed(2));
+
+    if (pending > 0) {
+      await client.query(`UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`, [pending, bet.user_id]);
+      await client.query(
+        `UPDATE apuestas
+         SET puntos_total = puntos_matched,
+             estado = CASE WHEN puntos_matched > 0 THEN 'matcheada' ELSE 'cerrada' END
+         WHERE id = $1`,
+        [bet.id]
+      );
+    } else {
+      await client.query(
+        `UPDATE apuestas
+         SET estado = CASE WHEN puntos_matched > 0 THEN 'matcheada' ELSE 'cerrada' END
+         WHERE id = $1`,
+        [bet.id]
+      );
+    }
+  }
+
+  await client.query(`UPDATE event_matches SET estado = 'en_vivo' WHERE id = $1`, [eventMatchId]);
+  return { ok: true, roomId: match.room_id, eventId: match.event_id, eventMatchId };
+}
+
+// -------------------------------------------------------
+// NUEVO: Liquidar ganador event_match (winnerSide: 'R' o 'V')
+// -------------------------------------------------------
+async function settleEventMatchResult(client, eventMatchId, winnerSide) {
+  if (!['R', 'V'].includes(winnerSide)) throw new Error('Ganador inválido, debe ser R o V');
+
+  const matchQ = await client.query(
+    `SELECT em.id, em.event_id, e.room_id, em.estado
+     FROM event_matches em
+     JOIN events e ON e.id = em.event_id
+     WHERE em.id = $1 FOR UPDATE`,
+    [eventMatchId]
+  );
+  const match = matchQ.rows[0];
+  if (!match) throw new Error('Pelea no encontrada');
+  if (match.estado === 'terminada') throw new Error('La pelea ya fue liquidada');
+
+  const loserSide = winnerSide === 'R' ? 'V' : 'R';
+
+  const betsQ = await client.query(
+    `SELECT id, user_id, gallo, puntos_total, puntos_matched
+     FROM apuestas WHERE event_match_id = $1 FOR UPDATE`,
+    [eventMatchId]
+  );
+  const bets = betsQ.rows;
+
+  let totalWinnerMatched = 0;
+  let totalLoserMatched  = 0;
+
+  for (const bet of bets) {
+    const matched = Number(bet.puntos_matched || 0);
+    if (matched <= 0) continue;
+    if (bet.gallo === winnerSide) totalWinnerMatched += matched;
+    if (bet.gallo === loserSide)  totalLoserMatched  += matched;
+  }
+
+  const commissionPct = 0.10;
+  const updates = [];
+
+  for (const bet of bets) {
+    const total     = Number(bet.puntos_total   || 0);
+    const matched   = Number(bet.puntos_matched || 0);
+    const unmatched = Number((total - matched).toFixed(2));
+
+    if (bet.gallo === winnerSide) {
+      let payout = unmatched;
+      if (matched > 0 && totalWinnerMatched > 0) {
+        const grossProfit      = Number(((matched / totalWinnerMatched) * totalLoserMatched).toFixed(2));
+        const commissionAmount = Number((grossProfit * commissionPct).toFixed(2));
+        const netProfit        = Number((grossProfit - commissionAmount).toFixed(2));
+        payout = Number((unmatched + matched + netProfit).toFixed(2));
+      }
+      if (payout > 0) {
+        await client.query(`UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`, [payout, bet.user_id]);
+      }
+      await client.query(
+        `UPDATE apuestas SET estado = CASE WHEN puntos_matched > 0 THEN 'ganada' ELSE 'devuelta' END WHERE id = $1`,
+        [bet.id]
+      );
+      updates.push({ betId: bet.id, userId: bet.user_id, status: matched > 0 ? 'ganada' : 'devuelta', payout });
+
+    } else if (bet.gallo === loserSide) {
+      if (unmatched > 0) {
+        await client.query(`UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`, [unmatched, bet.user_id]);
+      }
+      await client.query(
+        `UPDATE apuestas SET estado = CASE WHEN puntos_matched > 0 THEN 'perdida' ELSE 'devuelta' END WHERE id = $1`,
+        [bet.id]
+      );
+      updates.push({ betId: bet.id, userId: bet.user_id, status: matched > 0 ? 'perdida' : 'devuelta' });
+
+    } else {
+      if (total > 0) {
+        await client.query(`UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`, [total, bet.user_id]);
+      }
+      await client.query(`UPDATE apuestas SET estado = 'devuelta' WHERE id = $1`, [bet.id]);
+      updates.push({ betId: bet.id, userId: bet.user_id, status: 'devuelta', payout: total });
+    }
+  }
+
+  await client.query(
+    `UPDATE event_matches SET estado = 'terminada', resultado = $2, finished_at = NOW() WHERE id = $1`,
+    [eventMatchId, winnerSide]
+  );
+  return { ok: true, roomId: match.room_id, eventId: match.event_id, eventMatchId, winner: winnerSide, updates };
+}
+
+// -------------------------------------------------------
+// NUEVO: Declarar tabla event_match
+// -------------------------------------------------------
+async function settleEventMatchDraw(client, eventMatchId) {
+  const matchQ = await client.query(
+    `SELECT em.id, em.event_id, e.room_id, em.estado
+     FROM event_matches em
+     JOIN events e ON e.id = em.event_id
+     WHERE em.id = $1 FOR UPDATE`,
+    [eventMatchId]
+  );
+  const match = matchQ.rows[0];
+  if (!match) throw new Error('Pelea no encontrada');
+  if (match.estado === 'terminada') throw new Error('La pelea ya fue liquidada');
+
+  const betsQ = await client.query(
+    `SELECT id, user_id, puntos_total FROM apuestas WHERE event_match_id = $1 FOR UPDATE`,
+    [eventMatchId]
+  );
+
+  for (const bet of betsQ.rows) {
+    const refund = Number(bet.puntos_total || 0);
+    if (refund > 0) {
+      await client.query(`UPDATE usuarios SET puntos = puntos + $1 WHERE id = $2`, [refund, bet.user_id]);
+    }
+    await client.query(`UPDATE apuestas SET estado = 'tabla' WHERE id = $1`, [bet.id]);
+  }
+
+  await client.query(
+    `UPDATE event_matches SET estado = 'terminada', resultado = 'TABLA', finished_at = NOW() WHERE id = $1`,
+    [eventMatchId]
+  );
+  return { ok: true, roomId: match.room_id, eventId: match.event_id, eventMatchId, resultado: 'TABLA' };
 }
 
 // =======================================================
@@ -214,8 +356,7 @@ async function refundPendingAndClose(client, fightId) {
 router.get('/rooms', async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, nombre, slug, facebook_live_url, activos, created_at
-       FROM rooms ORDER BY created_at DESC`
+      `SELECT id, nombre, slug, facebook_live_url, activos, created_at FROM rooms ORDER BY created_at DESC`
     );
     res.json(rows);
   } catch (e) { console.error(e); res.status(500).json({ error: 'Error al obtener salas' }); }
@@ -225,10 +366,8 @@ router.post('/rooms', async (req, res) => {
   try {
     const { nombre, slug, facebook_live_url, activos } = req.body;
     if (!nombre || !slug) return res.status(400).json({ error: 'nombre y slug son obligatorios' });
-
     const { rows } = await pool.query(
-      `INSERT INTO rooms (nombre, slug, facebook_live_url, activos)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
+      `INSERT INTO rooms (nombre, slug, facebook_live_url, activos) VALUES ($1, $2, $3, $4) RETURNING *`,
       [nombre, slug, facebook_live_url || null, activos === undefined ? true : !!activos]
     );
     res.json(rows[0]);
@@ -239,7 +378,6 @@ router.put('/rooms/:roomid', async (req, res) => {
   try {
     const roomId = Number(req.params.roomid);
     const { nombre, slug, facebook_live_url, activos } = req.body;
-
     const { rows } = await pool.query(
       `UPDATE rooms
        SET nombre = COALESCE($2, nombre),
@@ -250,14 +388,13 @@ router.put('/rooms/:roomid', async (req, res) => {
       [roomId, nombre, slug, facebook_live_url, activos]
     );
     if (!rows.length) return res.status(404).json({ error: 'Sala no encontrada' });
-
     await emitRoomRefresh(req, roomId);
     res.json(rows[0]);
   } catch (e) { console.error(e); res.status(500).json({ error: 'Error al actualizar sala' }); }
 });
 
 // =======================================================
-// FIGHTS (peleas — sistema legacy, sigue funcionando)
+// FIGHTS LEGACY (peleas)
 // =======================================================
 
 router.get('/rooms/:roomid/active-fight', async (req, res) => {
@@ -288,7 +425,6 @@ router.post('/rooms/:roomid/fights', async (req, res) => {
     const roomId = Number(req.params.roomid);
     const { gallo_a, gallo_b } = req.body;
     if (!gallo_a || !gallo_b) return res.status(400).json({ error: 'gallo_a y gallo_b son obligatorios' });
-
     const { rows } = await pool.query(
       `INSERT INTO peleas (room_id, gallo_a, gallo_b, estado) VALUES ($1, $2, $3, 'pendiente') RETURNING *`,
       [roomId, gallo_a, gallo_b]
@@ -396,12 +532,8 @@ router.post('/rooms/:roomid/saltar-pelea/:peleaid', async (req, res) => {
       );
     }
 
-    await client.query(
-      `UPDATE peleas SET estado = 'saltada', ended_at = NOW() WHERE id = $1`,
-      [peleaId]
-    );
+    await client.query(`UPDATE peleas SET estado = 'saltada', ended_at = NOW() WHERE id = $1`, [peleaId]);
 
-    // Activar siguiente pelea pendiente
     const nextQ = await client.query(
       `SELECT id FROM peleas WHERE room_id = $1 AND estado = 'pendiente' ORDER BY created_at ASC LIMIT 1`,
       [roomId]
@@ -422,6 +554,101 @@ router.post('/rooms/:roomid/saltar-pelea/:peleaid', async (req, res) => {
     await client.query('ROLLBACK');
     console.error(e);
     res.status(500).json({ error: e.message || 'Error al saltar pelea' });
+  } finally { client.release(); }
+});
+
+// =======================================================
+// EVENT MATCHES — sistema actual (apuestas por event_match_id)
+// =======================================================
+
+router.post('/event-matches/:id/close-bets', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const eventMatchId = Number(req.params.id);
+    await client.query('BEGIN');
+    const result = await refundPendingEventMatchAndClose(client, eventMatchId);
+    await client.query('COMMIT');
+    await emitRoomRefresh(req, result.roomId);
+    res.json({ ok: true, result });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    res.status(500).json({ error: e.message || 'Error al cerrar apuestas' });
+  } finally { client.release(); }
+});
+
+router.post('/event-matches/:id/winner', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const eventMatchId = Number(req.params.id);
+    const ganador = String(req.body.ganador || '').trim().toUpperCase();
+    await client.query('BEGIN');
+    const result = await settleEventMatchResult(client, eventMatchId, ganador);
+    await client.query('COMMIT');
+    await emitRoomRefresh(req, result.roomId);
+    res.json({ ok: true, result });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    res.status(500).json({ error: e.message || 'Error al liquidar ganador' });
+  } finally { client.release(); }
+});
+
+router.post('/event-matches/:id/draw', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const eventMatchId = Number(req.params.id);
+    await client.query('BEGIN');
+    const result = await settleEventMatchDraw(client, eventMatchId);
+    await client.query('COMMIT');
+    await emitRoomRefresh(req, result.roomId);
+    res.json({ ok: true, result });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    res.status(500).json({ error: e.message || 'Error al declarar tabla' });
+  } finally { client.release(); }
+});
+
+router.post('/event-matches/:id/advance', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const eventMatchId = Number(req.params.id);
+    await client.query('BEGIN');
+
+    const currentQ = await client.query(
+      `SELECT em.id, em.event_id, em.orden, e.room_id
+       FROM event_matches em
+       JOIN events e ON e.id = em.event_id
+       WHERE em.id = $1 FOR UPDATE`,
+      [eventMatchId]
+    );
+    const current = currentQ.rows[0];
+    if (!current) throw new Error('Pelea no encontrada');
+
+    const nextQ = await client.query(
+      `SELECT id FROM event_matches
+       WHERE event_id = $1 AND orden > $2 AND estado = 'pendiente'
+       ORDER BY orden ASC LIMIT 1`,
+      [current.event_id, current.orden]
+    );
+
+    let nextMatch = null;
+    if (nextQ.rows[0]) {
+      const upd = await client.query(
+        `UPDATE event_matches SET estado = 'lista' WHERE id = $1 RETURNING *`,
+        [nextQ.rows[0].id]
+      );
+      nextMatch = upd.rows[0];
+    }
+
+    await client.query('COMMIT');
+    await emitRoomRefresh(req, current.room_id);
+    res.json({ ok: true, nextMatch });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    res.status(500).json({ error: e.message || 'Error al avanzar pelea' });
   } finally { client.release(); }
 });
 
@@ -449,14 +676,12 @@ router.post('/users/:id/points', async (req, res) => {
     if (!amount || Number.isNaN(amount)) return res.status(400).json({ error: 'amount inválido' });
 
     await client.query('BEGIN');
-
     const uQ = await client.query(
       `UPDATE usuarios SET puntos = puntos + $2 WHERE id = $1 RETURNING id, username, puntos`,
       [userId, amount]
     );
     if (!uQ.rows.length) throw new Error('Usuario no encontrado');
 
-    // Registrar en wallet_adjustments (reemplaza puntos_logs)
     await client.query(
       `INSERT INTO wallet_adjustments (user_id, admin_user_id, adjustment_type, puntos, motivo)
        VALUES ($1, $2, $3, $4, $5)`,

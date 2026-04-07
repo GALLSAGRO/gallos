@@ -18,20 +18,32 @@ async function emitPoolUpdate(req, roomId, eventMatchId, userId = null) {
       [eventMatchId]
     );
 
-    const roomQ = await pool.query('SELECT slug FROM rooms WHERE id = $1', [roomId]);
-    const sockets = req.app.get('sockets');
+    const roomQ = await pool.query(
+      'SELECT slug FROM rooms WHERE id = $1',
+      [roomId]
+    );
 
+    const sockets = req.app.get('sockets');
     if (!sockets || !roomQ.rows[0]) return;
 
     const payload = { pool: poolQ.rows };
 
     if (userId) {
-      const meQ = await pool.query('SELECT puntos FROM usuarios WHERE id = $1', [userId]);
-      if (meQ.rows[0]) payload.me = { puntos: meQ.rows[0].puntos };
+      const meQ = await pool.query(
+        'SELECT puntos FROM usuarios WHERE id = $1',
+        [userId]
+      );
+      if (meQ.rows[0]) {
+        payload.me = { puntos: Number(meQ.rows[0].puntos) };
+      }
     }
 
     if (typeof sockets.emitBetPlaced === 'function') {
       sockets.emitBetPlaced(roomQ.rows[0].slug, payload);
+    }
+
+    if (typeof sockets.emitRoomRefresh === 'function') {
+      await sockets.emitRoomRefresh(roomQ.rows[0].slug);
     }
   } catch (err) {
     console.error('emitPoolUpdate error:', err);
@@ -47,47 +59,51 @@ async function processMatchingBet({ roomId, eventMatchId, eventId, userId, gallo
   try {
     await client.query('BEGIN');
 
-    // Verificar saldo
     const userQ = await client.query(
-      `SELECT puntos FROM usuarios WHERE id = $1 FOR UPDATE`,
+      `SELECT puntos
+       FROM usuarios
+       WHERE id = $1
+       FOR UPDATE`,
       [userId]
     );
 
-    if (!userQ.rows[0] || Number(userQ.rows[0].puntos) < puntos) {
+    const user = userQ.rows[0];
+    if (!user || Number(user.puntos) < puntos) {
       await client.query('ROLLBACK');
       return { ok: false, error: 'Saldo insuficiente' };
     }
 
-    // Verificar que la pelea acepta apuestas
     const matchQ = await client.query(
       `SELECT id, estado
        FROM event_matches
-       WHERE id = $1 AND event_id = $2
+       WHERE id = $1
+         AND event_id = $2
        FOR UPDATE`,
       [eventMatchId, eventId]
     );
 
-    if (!matchQ.rows[0]) {
+    const match = matchQ.rows[0];
+    if (!match) {
       await client.query('ROLLBACK');
       return { ok: false, error: 'Pelea no encontrada' };
     }
 
-    if (!['lista', 'apostando'].includes(matchQ.rows[0].estado)) {
+    if (!['lista', 'apostando'].includes(match.estado)) {
       await client.query('ROLLBACK');
       return { ok: false, error: 'Apuestas cerradas para esta pelea' };
     }
 
-    // Poner estado 'apostando' si estaba en 'lista'
-    if (matchQ.rows[0].estado === 'lista') {
+    if (match.estado === 'lista') {
       await client.query(
         `UPDATE event_matches
-         SET estado = 'apostando', betting_opened_at = NOW()
+         SET estado = 'apostando',
+             betting_opened_at = NOW()
          WHERE id = $1`,
         [eventMatchId]
       );
     }
 
-    // Descontar puntos al usuario
+    // Descontamos temporalmente el total apostado
     await client.query(
       `UPDATE usuarios
        SET puntos = puntos - $1
@@ -95,7 +111,6 @@ async function processMatchingBet({ roomId, eventMatchId, eventId, userId, gallo
       [puntos, userId]
     );
 
-    // Insertar apuesta — gallo válido: 'R' o 'V'
     const betIns = await client.query(
       `INSERT INTO apuestas
         (user_id, room_id, event_id, event_match_id, gallo, puntos_total, puntos_matched, estado)
@@ -107,21 +122,28 @@ async function processMatchingBet({ roomId, eventMatchId, eventId, userId, gallo
     const bet = betIns.rows[0];
     const opposite = gallo === 'R' ? 'V' : 'R';
 
-    // Cruzar con apuestas del lado contrario
-    const oppBets = await client.query(
-      `SELECT * FROM apuestas
-       WHERE event_match_id = $1 AND gallo = $2 AND estado = 'pendiente'
+    const oppBetsQ = await client.query(
+      `SELECT *
+       FROM apuestas
+       WHERE event_match_id = $1
+         AND gallo = $2
+         AND estado IN ('pendiente', 'matcheada')
+         AND user_id <> $3
        ORDER BY created_at ASC
        FOR UPDATE`,
-      [eventMatchId, opposite]
+      [eventMatchId, opposite, userId]
     );
 
     let remaining = puntos;
+    let matchedTotal = 0;
 
-    for (const ob of oppBets.rows) {
+    for (const ob of oppBetsQ.rows) {
       if (remaining <= 0) break;
 
-      const available = Number(ob.puntos_total) - Number(ob.puntos_matched);
+      const obTotal = Number(ob.puntos_total || 0);
+      const obMatched = Number(ob.puntos_matched || 0);
+      const available = obTotal - obMatched;
+
       if (available <= 0) continue;
 
       const matched = Math.min(remaining, available);
@@ -150,31 +172,76 @@ async function processMatchingBet({ roomId, eventMatchId, eventId, userId, gallo
         [matched, bet.id, ob.id]
       );
 
-      if (Number(ob.puntos_matched) + matched >= Number(ob.puntos_total)) {
-        await client.query(
-          `UPDATE apuestas SET estado = 'matcheada' WHERE id = $1`,
-          [ob.id]
-        );
-      }
+      const obNewMatched = obMatched + matched;
+
+      await client.query(
+        `UPDATE apuestas
+         SET estado = CASE
+           WHEN puntos_matched >= puntos_total THEN 'matcheada'
+           ELSE 'pendiente'
+         END
+         WHERE id = $1`,
+        [ob.id]
+      );
 
       remaining -= matched;
+      matchedTotal += matched;
     }
 
-    if (remaining === 0) {
+    // Devolver parte no matcheada
+    if (remaining > 0) {
       await client.query(
-        `UPDATE apuestas SET estado = 'matcheada' WHERE id = $1`,
+        `UPDATE usuarios
+         SET puntos = puntos + $1
+         WHERE id = $2`,
+        [remaining, userId]
+      );
+    }
+
+    // Ajustar apuesta recién creada a lo realmente cruzado
+    if (matchedTotal > 0) {
+      await client.query(
+        `UPDATE apuestas
+         SET puntos_total = $2,
+             puntos_matched = $2,
+             estado = 'matcheada'
+         WHERE id = $1`,
+        [bet.id, matchedTotal]
+      );
+    } else {
+      await client.query(
+        `UPDATE apuestas
+         SET puntos_total = 0,
+             puntos_matched = 0,
+             estado = 'cancelada'
+         WHERE id = $1`,
         [bet.id]
       );
     }
 
-    const updatedBet = await client.query(
-      `SELECT * FROM apuestas WHERE id = $1`,
+    const updatedBetQ = await client.query(
+      `SELECT *
+       FROM apuestas
+       WHERE id = $1`,
       [bet.id]
+    );
+
+    const balanceQ = await client.query(
+      `SELECT puntos
+       FROM usuarios
+       WHERE id = $1`,
+      [userId]
     );
 
     await client.query('COMMIT');
 
-    return { ok: true, bet: updatedBet.rows[0], unmatched: remaining };
+    return {
+      ok: true,
+      bet: updatedBetQ.rows[0],
+      unmatched: remaining,
+      matched: matchedTotal,
+      balance: Number(balanceQ.rows[0]?.puntos || 0)
+    };
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('processMatchingBet error:', err);
@@ -214,10 +281,16 @@ router.post('/', auth, async (req, res) => {
 
     await emitPoolUpdate(req, roomId, eventMatchId, req.user.id);
 
-    res.json({ ok: true, bet: result.bet, unmatched: result.unmatched });
+    return res.json({
+      ok: true,
+      bet: result.bet,
+      unmatched: result.unmatched,
+      matched: result.matched,
+      balance: result.balance
+    });
   } catch (err) {
     console.error('POST /api/bets error:', err);
-    res.status(500).json({ error: 'Error al registrar apuesta' });
+    return res.status(500).json({ error: 'Error al registrar apuesta' });
   }
 });
 
@@ -243,10 +316,10 @@ router.get('/my', auth, async (req, res) => {
       [req.user.id]
     );
 
-    res.json(rows);
+    return res.json(rows);
   } catch (err) {
     console.error('GET /api/bets/my error:', err);
-    res.status(500).json({ error: 'Error al obtener apuestas' });
+    return res.status(500).json({ error: 'Error al obtener apuestas' });
   }
 });
 
@@ -266,10 +339,10 @@ router.get('/match/:eventMatchId', auth, async (req, res) => {
       [Number(req.params.eventMatchId)]
     );
 
-    res.json(rows);
+    return res.json(rows);
   } catch (err) {
     console.error('GET /api/bets/match/:eventMatchId error:', err);
-    res.status(500).json({ error: 'Error al obtener el pool de apuestas' });
+    return res.status(500).json({ error: 'Error al obtener el pool de apuestas' });
   }
 });
 
