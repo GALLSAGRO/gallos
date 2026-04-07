@@ -31,7 +31,8 @@ function toEmbedUrl(url) {
   const ytMatch = url.match(/(?:youtube\.com\/(?:watch\?v=|live\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
   if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&mute=0`;
   if (url.includes('facebook.com') || url.includes('fb.watch')) {
-    return `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}&show_text=false&autoplay=true&allowfullscreen=true`;
+    if (url.includes('facebook.com/plugins/video.php')) return url;
+    return `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}&autoplay=true&mute=false`;
   }
   return url;
 }
