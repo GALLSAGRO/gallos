@@ -25,6 +25,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
+function toEmbedUrl(url) {
+  if (!url) return '';
+  url = url.trim();
+  const ytMatch = url.match(/(?:youtube\.com\/(?:watch\?v=|live\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+  if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&mute=0`;
+  if (url.includes('facebook.com') || url.includes('fb.watch')) {
+    return `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}&show_text=false&autoplay=true&allowfullscreen=true`;
+  }
+  return url;
+}
+
 async function api(url, opts = {}) {
   opts.headers = {
     ...(opts.headers || {}),
@@ -115,7 +126,7 @@ async function enterRoom(slug, liveUrl) {
   if (betsActivas) betsActivas.innerHTML = '<p class="no-data">Cargando apuestas...</p>';
   if (betsHistorial) betsHistorial.innerHTML = '';
   if (chatRoomName) chatRoomName.textContent = slug;
-  if (frame) frame.src = liveUrl || 'about:blank';
+  if (frame) frame.src = toEmbedUrl(liveUrl) || 'about:blank';
 
   connectSocket(slug);
   await loadRoomState();
@@ -173,12 +184,16 @@ function connectSocket(roomSlug) {
     currentEvent = activeEvent || null;
 
     if (room?.facebook_live_url && frame) {
-      frame.src = room.facebook_live_url;
+      frame.src = toEmbedUrl(room.facebook_live_url);
     }
 
     if (current) {
       renderFight(current);
-      renderPool(pool || [], current);
+      if (pool && pool.length > 0) {
+        renderPool(pool, current);
+      } else {
+        fetchAndRenderPool(current.id); // ← pide el pool directo si viene vacío
+      }
     } else {
       renderNoFight();
       renderPool([], null);
@@ -193,7 +208,11 @@ function connectSocket(roomSlug) {
   });
 
   socket.on('bet-placed', ({ pool, me }) => {
-    renderPool(pool || [], currentFight);
+    if (pool && pool.length > 0) {
+      renderPool(pool, currentFight);
+    } else if (currentFight?.id) {
+  fetchAndRenderPool(currentFight.id); // ← fallback si pool viene vacío
+    }
 
     if (me?.puntos != null) {
       user.puntos = me.puntos;
@@ -378,6 +397,15 @@ function updateEstadoBadge(estado) {
 
   badge.textContent = labels[estado] || estado;
   badge.className = 'estado-badge estado-' + String(estado).replaceAll('_', '-');
+}
+
+async function fetchAndRenderPool(eventMatchId) {
+  try {
+    const rows = await api(`/api/bets/match/${eventMatchId}`);
+    if (Array.isArray(rows)) renderPool(rows, currentFight);
+  } catch (e) {
+    console.error('fetchAndRenderPool:', e);
+  }
 }
 
 function renderPool(poolData, fight = null) {

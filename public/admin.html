@@ -415,6 +415,18 @@ html = '''<!DOCTYPE html>
 <script src="/socket.io/socket.io.js"></script>
 <script>
 const token = localStorage.getItem('token');
+
+function toEmbedUrl(url) {
+  if (!url) return '';
+  url = url.trim();
+  const ytMatch = url.match(/(?:youtube\.com\/(?:watch\?v=|live\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+  if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&mute=0`;
+  if (url.includes('facebook.com') || url.includes('fb.watch')) {
+    return `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}&show_text=false&autoplay=true&allowfullscreen=true`;
+  }
+  return url;
+}
+
 if (!token) window.location.href = '/login';
 
 let selectedRoom    = null;
@@ -944,7 +956,7 @@ async function guardarSala() {
   const id     = $('salaId').value;
   const nombre = $('salaNombre').value.trim();
   const slug   = $('salaSlug').value.trim();
-  const facebook_live_url = $('salaUrl').value.trim();
+  const facebook_live_url = toEmbedUrl($('salaUrl').value.trim());
   const activos = $('salaActiva').checked;
   if (!nombre || !slug) { showAlert('alertSala','Nombre y slug son obligatorios'); return; }
   try {
