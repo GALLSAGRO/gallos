@@ -795,7 +795,7 @@ async function saltarPelea(matchId) {
 async function cerrarApuestas(matchId) {
   if (!confirm('Cerrar apuestas para esta pelea?')) return;
   try {
-    await api(`/api/event-matches/${matchId}/close-bets`, { method:'POST' }); // ← CORREGIDO
+    await api(`/api/event-matches/${matchId}/close-betting`, { method:'POST' }); // ← CORREGIDO
     toast('Apuestas cerradas');
     await recargarEvento();
   } catch (e) { toast(e.message, false); }
