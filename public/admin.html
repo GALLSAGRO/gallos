@@ -896,7 +896,7 @@ async function agregarPelea() {
   if (equipo_rojo_id === equipo_verde_id)  { showAlert('alertPelea','El equipo rojo y verde no pueden ser el mismo'); return; }
 
   try {
-    await api(`/api/event-matches/${activeEventId}`, {
+    await api(`/api/event-matches/event/${activeEventId}`, {
       method:'POST',
       body: JSON.stringify({ equipo_rojo_id, equipo_verde_id, notas: notas||null })
     });

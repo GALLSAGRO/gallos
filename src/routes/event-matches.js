@@ -27,7 +27,7 @@ router.get('/:eventId', async (req, res) => {
 });
 
 // POST /api/event-matches/:eventId - agregar pelea a cartelera
-router.post('/:eventId', admin, async (req, res) => {
+router.post('/event/:eventId', admin, async (req, res) => {
   const event_id = Number(req.params.eventId);
   const { equipo_rojo_id, equipo_verde_id, notas } = req.body;
 
