@@ -4,18 +4,24 @@ if (!token) window.location.href = '/login';
 let user = JSON.parse(localStorage.getItem('user') || '{}');
 let currentRoom = null;
 let currentFight = null;
+let currentEvent = null;
 let selectedGallo = null;
 let socket = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
-  await refreshMe();
-  await loadRooms();
+  try {
+    await refreshMe();
+    await loadRooms();
 
-  const modal = document.getElementById('modalRetiro');
-  if (modal) {
-    modal.addEventListener('click', function (e) {
-      if (e.target === this) cerrarRetiro();
-    });
+    const modal = document.getElementById('modalRetiro');
+    if (modal) {
+      modal.addEventListener('click', function (e) {
+        if (e.target === this) cerrarRetiro();
+      });
+    }
+  } catch (err) {
+    console.error(err);
+    showNotificacion('Error al cargar la aplicación');
   }
 });
 
@@ -27,37 +33,65 @@ async function api(url, opts = {}) {
   };
 
   const r = await fetch(url, opts);
-  return r.json();
+  let data = null;
+
+  try {
+    data = await r.json();
+  } catch {
+    data = { ok: false, error: 'Respuesta inválida del servidor' };
+  }
+
+  if (!r.ok) {
+    return {
+      ok: false,
+      error: data?.error || `Error ${r.status}`
+    };
+  }
+
+  if (Array.isArray(data)) return data;
+
+  if (data && typeof data === 'object' && data.ok === undefined) {
+    data.ok = true;
+  }
+
+  return data;
 }
 
 async function refreshMe() {
   const data = await api('/api/me');
+  if (!data?.ok) {
+    console.error(data?.error || 'No se pudo cargar el usuario');
+    return;
+  }
 
   user = data;
   localStorage.setItem('user', JSON.stringify(user));
 
-  document.getElementById('navUser').textContent = user.username || 'Usuario';
-  document.getElementById('navPuntos').textContent = (user.puntos || 0) + ' pts';
-  document.getElementById('saldoMini').textContent = (user.puntos || 0) + ' pts';
+  const navUser = document.getElementById('navUser');
+  const navPuntos = document.getElementById('navPuntos');
+  const saldoMini = document.getElementById('saldoMini');
+  const adminLink = document.getElementById('adminLink');
 
-  if (user.isadmin) {
-    document.getElementById('adminLink').style.display = 'inline-block';
-  }
+  if (navUser) navUser.textContent = user.username || 'Usuario';
+  if (navPuntos) navPuntos.textContent = `${Number(user.puntos || 0)} pts`;
+  if (saldoMini) saldoMini.textContent = `${Number(user.puntos || 0)} pts`;
+  if (adminLink) adminLink.style.display = user.is_admin ? 'inline-block' : 'none';
 }
 
 /* ── Salas ─────────────────────────────────────────────────────────────── */
 async function loadRooms() {
   const rooms = await api('/api/rooms');
   const list = document.getElementById('roomList');
+  if (!list) return;
 
-  if (!rooms.length) {
+  if (!Array.isArray(rooms) || !rooms.length) {
     list.innerHTML = `<p class="no-data">No hay salas disponibles en este momento</p>`;
     return;
   }
 
   list.innerHTML = rooms.map(r => `
-    <div class="room-card" onclick="enterRoom('${escapeAttr(r.slug)}', \`${String(r.facebookliveurl || '').replace(/`/g, '\\`')}\`)">
-      <h3>${escapeHtml(r.nombre)}</h3>
+    <div class="room-card" onclick="enterRoom('${escapeAttr(r.slug)}', \`${String(r.facebook_live_url || '').replace(/`/g, '\\`')}\`)">
+      <h3>${escapeHtml(r.nombre || r.slug || 'Sala')}</h3>
       <p>${r.activos ? 'En vivo' : 'Cerrado'}</p>
     </div>
   `).join('');
@@ -66,17 +100,23 @@ async function loadRooms() {
 async function enterRoom(slug, liveUrl) {
   currentRoom = slug;
 
-  document.getElementById('roomSelector').style.display = 'none';
-  document.getElementById('roomView').style.display = 'block';
-
-  document.getElementById('chatMessages').innerHTML = '';
-  document.getElementById('historialList').innerHTML = '<p class="no-data">Cargando historial...</p>';
-  document.getElementById('betsActivas').innerHTML = '<p class="no-data">Cargando apuestas...</p>';
-  document.getElementById('betsHistorial').innerHTML = '';
-  document.getElementById('chatRoomName').textContent = slug;
-
+  const roomSelector = document.getElementById('roomSelector');
+  const roomView = document.getElementById('roomView');
+  const chatMessages = document.getElementById('chatMessages');
+  const historialList = document.getElementById('historialList');
+  const betsActivas = document.getElementById('betsActivas');
+  const betsHistorial = document.getElementById('betsHistorial');
+  const chatRoomName = document.getElementById('chatRoomName');
   const frame = document.getElementById('liveFrame');
-  frame.src = liveUrl || 'about:blank';
+
+  if (roomSelector) roomSelector.style.display = 'none';
+  if (roomView) roomView.style.display = 'block';
+  if (chatMessages) chatMessages.innerHTML = '';
+  if (historialList) historialList.innerHTML = '<p class="no-data">Cargando historial...</p>';
+  if (betsActivas) betsActivas.innerHTML = '<p class="no-data">Cargando apuestas...</p>';
+  if (betsHistorial) betsHistorial.innerHTML = '';
+  if (chatRoomName) chatRoomName.textContent = slug;
+  if (frame) frame.src = liveUrl || 'about:blank';
 
   connectSocket(slug);
   await loadRoomState();
@@ -92,16 +132,26 @@ function backToRooms() {
 
   currentRoom = null;
   currentFight = null;
+  currentEvent = null;
   selectedGallo = null;
 
-  document.getElementById('roomSelector').style.display = 'block';
-  document.getElementById('roomView').style.display = 'none';
-  document.getElementById('liveFrame').src = 'about:blank';
-  document.getElementById('historialList').innerHTML = '';
-  document.getElementById('chatMessages').innerHTML = '';
-  document.getElementById('betsActivas').innerHTML = '';
-  document.getElementById('betsHistorial').innerHTML = '';
-  document.getElementById('chatRoomName').textContent = '';
+  const roomSelector = document.getElementById('roomSelector');
+  const roomView = document.getElementById('roomView');
+  const frame = document.getElementById('liveFrame');
+  const historialList = document.getElementById('historialList');
+  const chatMessages = document.getElementById('chatMessages');
+  const betsActivas = document.getElementById('betsActivas');
+  const betsHistorial = document.getElementById('betsHistorial');
+  const chatRoomName = document.getElementById('chatRoomName');
+
+  if (roomSelector) roomSelector.style.display = 'block';
+  if (roomView) roomView.style.display = 'none';
+  if (frame) frame.src = 'about:blank';
+  if (historialList) historialList.innerHTML = '';
+  if (chatMessages) chatMessages.innerHTML = '';
+  if (betsActivas) betsActivas.innerHTML = '';
+  if (betsHistorial) betsHistorial.innerHTML = '';
+  if (chatRoomName) chatRoomName.textContent = '';
 
   renderNoFight();
 }
@@ -120,16 +170,20 @@ function connectSocket(roomSlug) {
   });
 
   socket.on('room-state', ({ room, activeEvent, current, matches, scores, historial, pool }) => {
-    if (room?.facebook_live_url) {
-      document.getElementById('liveFrame').src = room.facebook_live_url;
+    const frame = document.getElementById('liveFrame');
+
+    currentEvent = activeEvent || null;
+
+    if (room?.facebook_live_url && frame) {
+      frame.src = room.facebook_live_url;
     }
 
     if (current) {
       renderFight(current);
-      renderPool(pool || []);
+      renderPool(pool || [], current);
     } else {
       renderNoFight();
-      renderPool([]);
+      renderPool([], null);
     }
 
     if (historial) {
@@ -139,16 +193,23 @@ function connectSocket(roomSlug) {
 
   socket.on('event:match_result', async () => {
     await loadRoomState();
+    await loadMyBets();
   });
 
   socket.on('bet-placed', ({ pool, me }) => {
-    renderPool(pool || []);
+    renderPool(pool || [], currentFight);
+
     if (me?.puntos != null) {
       user.puntos = me.puntos;
       localStorage.setItem('user', JSON.stringify(user));
-      document.getElementById('navPuntos').textContent = me.puntos + ' pts';
-      document.getElementById('saldoMini').textContent = me.puntos + ' pts';
+
+      const navPuntos = document.getElementById('navPuntos');
+      const saldoMini = document.getElementById('saldoMini');
+      if (navPuntos) navPuntos.textContent = `${me.puntos} pts`;
+      if (saldoMini) saldoMini.textContent = `${me.puntos} pts`;
     }
+
+    loadMyBets();
   });
 
   socket.on('chat-message', ({ username, message, system }) => {
@@ -158,8 +219,12 @@ function connectSocket(roomSlug) {
   socket.on('balance-update', ({ puntos }) => {
     user.puntos = puntos;
     localStorage.setItem('user', JSON.stringify(user));
-    document.getElementById('navPuntos').textContent = puntos + ' pts';
-    document.getElementById('saldoMini').textContent = puntos + ' pts';
+
+    const navPuntos = document.getElementById('navPuntos');
+    const saldoMini = document.getElementById('saldoMini');
+    if (navPuntos) navPuntos.textContent = `${puntos} pts`;
+    if (saldoMini) saldoMini.textContent = `${puntos} pts`;
+
     loadMyBets();
   });
 
@@ -172,18 +237,25 @@ function connectSocket(roomSlug) {
 async function loadRoomState() {
   if (!currentRoom) return;
 
-  const data = await api(`/api/rooms/${encodeURIComponent(currentRoom)}/state`);
+  const data = await api(`/api/rooms/${encodeURIComponent(currentRoom)}`);
+  if (!data?.ok && data?.error) {
+    console.error(data.error);
+    return;
+  }
 
-  if (data?.room?.facebook_live_url) {
-    document.getElementById('liveFrame').src = data.room.facebook_live_url;
+  currentEvent = data.activeEvent || null;
+
+  const frame = document.getElementById('liveFrame');
+  if (data?.room?.facebook_live_url && frame) {
+    frame.src = data.room.facebook_live_url;
   }
 
   if (data?.current) {
     renderFight(data.current);
-    renderPool(data.pool || []);
+    renderPool(data.pool || [], data.current);
   } else {
     renderNoFight();
-    renderPool([]);
+    renderPool([], null);
   }
 
   renderHistorial(data.historial || []);
@@ -194,26 +266,50 @@ function renderNoFight() {
   currentFight = null;
   selectedGallo = null;
 
-  document.getElementById('fightTitleStage').textContent = 'Sin pelea activa';
-  document.getElementById('noFight').style.display = 'block';
-  document.getElementById('fightCard').style.display = 'none';
-  document.getElementById('betForm').style.display = 'none';
-  document.getElementById('betClosed').style.display = 'block';
-  document.getElementById('betClosed').textContent = 'Las apuestas aparecerán aquí cuando la pelea esté abierta.';
-  document.getElementById('resultBanner').style.display = 'none';
+  const fightTitleStage = document.getElementById('fightTitleStage');
+  const noFight = document.getElementById('noFight');
+  const fightCard = document.getElementById('fightCard');
+  const betForm = document.getElementById('betForm');
+  const betClosed = document.getElementById('betClosed');
+  const resultBanner = document.getElementById('resultBanner');
+  const btnA = document.getElementById('btnA');
+  const btnB = document.getElementById('btnB');
+  const btnASelect = document.getElementById('btnASelect');
+  const btnBSelect = document.getElementById('btnBSelect');
+  const poolA = document.getElementById('poolA');
+  const poolB = document.getElementById('poolB');
+  const betAmount = document.getElementById('betAmount');
+  const estadoBadge = document.getElementById('estadoBadge');
 
-  document.getElementById('btnA').textContent = 'Equipo Rojo';
-  document.getElementById('btnB').textContent = 'Equipo Verde';
-  document.getElementById('btnASelect').textContent = 'Rojo';
-  document.getElementById('btnBSelect').textContent = 'Verde';
-  document.getElementById('poolA').textContent = '0 pts · 50%';
-  document.getElementById('poolB').textContent = '0 pts · 50%';
-  document.getElementById('btnASelect').classList.remove('selected');
-  document.getElementById('btnBSelect').classList.remove('selected');
-  document.getElementById('betAmount').value = '';
+  if (fightTitleStage) fightTitleStage.textContent = 'Sin pelea activa';
+  if (noFight) noFight.style.display = 'block';
+  if (fightCard) fightCard.style.display = 'none';
+  if (betForm) betForm.style.display = 'none';
+  if (betClosed) {
+    betClosed.style.display = 'block';
+    betClosed.textContent = 'Las apuestas aparecerán aquí cuando la pelea esté abierta.';
+  }
+  if (resultBanner) resultBanner.style.display = 'none';
 
-  document.getElementById('estadoBadge').textContent = 'Sin estado';
-  document.getElementById('estadoBadge').className = 'estado-badge';
+  if (btnA) btnA.textContent = 'Equipo Rojo';
+  if (btnB) btnB.textContent = 'Equipo Verde';
+  if (btnASelect) {
+    btnASelect.textContent = 'Rojo';
+    btnASelect.classList.remove('selected');
+  }
+  if (btnBSelect) {
+    btnBSelect.textContent = 'Verde';
+    btnBSelect.classList.remove('selected');
+  }
+
+  if (poolA) poolA.textContent = '0 pts · 50%';
+  if (poolB) poolB.textContent = '0 pts · 50%';
+  if (betAmount) betAmount.value = '';
+
+  if (estadoBadge) {
+    estadoBadge.textContent = 'Sin estado';
+    estadoBadge.className = 'estado-badge';
+  }
 }
 
 function renderFight(fight) {
@@ -223,76 +319,103 @@ function renderFight(fight) {
   const rojo = fight.nombre_equipo_rojo || 'Equipo Rojo';
   const verde = fight.nombre_equipo_verde || 'Equipo Verde';
 
-  document.getElementById('fightTitleStage').textContent = `${rojo} vs ${verde}`;
-  document.getElementById('btnA').textContent = rojo;
-  document.getElementById('btnB').textContent = verde;
-  document.getElementById('btnASelect').textContent = rojo;
-  document.getElementById('btnBSelect').textContent = verde;
+  const fightTitleStage = document.getElementById('fightTitleStage');
+  const btnA = document.getElementById('btnA');
+  const btnB = document.getElementById('btnB');
+  const btnASelect = document.getElementById('btnASelect');
+  const btnBSelect = document.getElementById('btnBSelect');
+  const noFight = document.getElementById('noFight');
+  const fightCard = document.getElementById('fightCard');
+  const resultBanner = document.getElementById('resultBanner');
+  const betForm = document.getElementById('betForm');
+  const betClosed = document.getElementById('betClosed');
+  const betAmount = document.getElementById('betAmount');
 
-  document.getElementById('noFight').style.display = 'none';
-  document.getElementById('fightCard').style.display = 'block';
-  document.getElementById('resultBanner').style.display = 'none';
+  if (fightTitleStage) fightTitleStage.textContent = `${rojo} vs ${verde}`;
+  if (btnA) btnA.textContent = rojo;
+  if (btnB) btnB.textContent = verde;
+  if (btnASelect) btnASelect.textContent = rojo;
+  if (btnBSelect) btnBSelect.textContent = verde;
 
-  updateEstadoBadge(fight.estado);
+  if (noFight) noFight.style.display = 'none';
+  if (fightCard) fightCard.style.display = 'block';
+  if (resultBanner) resultBanner.style.display = 'none';
+
+  updateEstadoBadge(fight.estado || 'sin_estado');
 
   const open = ['lista', 'apostando'].includes(fight.estado);
-  document.getElementById('betForm').style.display = open ? 'block' : 'none';
-  document.getElementById('betClosed').style.display = open ? 'none' : 'block';
+  if (betForm) betForm.style.display = open ? 'block' : 'none';
+  if (betClosed) {
+    betClosed.style.display = open ? 'none' : 'block';
 
-  if (!open) {
-    document.getElementById('betClosed').textContent =
-      fight.estado === 'en_vivo'
-        ? 'La pelea está en vivo. Las apuestas están cerradas.'
-        : fight.estado === 'terminada'
-          ? 'La pelea ha finalizado.'
-          : 'Las apuestas no están abiertas en este momento.';
+    if (!open) {
+      betClosed.textContent =
+        fight.estado === 'en_vivo'
+          ? 'La pelea está en vivo. Las apuestas están cerradas.'
+          : fight.estado === 'terminada'
+            ? 'La pelea ha finalizado.'
+            : 'Las apuestas no están abiertas en este momento.';
+    }
   }
 
-  document.getElementById('btnASelect').classList.remove('selected');
-  document.getElementById('btnBSelect').classList.remove('selected');
-  document.getElementById('betAmount').value = '';
+  if (btnASelect) btnASelect.classList.remove('selected');
+  if (btnBSelect) btnBSelect.classList.remove('selected');
+  if (betAmount) betAmount.value = '';
 }
 
 function updateEstadoBadge(estado) {
   const badge = document.getElementById('estadoBadge');
+  if (!badge) return;
+
   const labels = {
+    pendiente: 'Pendiente',
     lista: 'Lista',
-    apostando: 'Apostando', 
+    apostando: 'Apostando',
     en_vivo: 'En vivo',
-    terminada: 'Terminada'
+    terminada: 'Terminada',
+    finalizada: 'Finalizada',
+    sin_estado: 'Sin estado'
   };
 
   badge.textContent = labels[estado] || estado;
-  badge.className = 'estado-badge estado-' + estado.replace('_', '-');
+  badge.className = 'estado-badge estado-' + String(estado).replaceAll('_', '-');
 }
 
-function renderPool(poolData) {
-  if (!currentFight) return;
+function renderPool(poolData, fight = null) {
+  const poolA = document.getElementById('poolA');
+  const poolB = document.getElementById('poolB');
+  if (!poolA || !poolB) return;
 
   let totalRojo = 0;
   let totalVerde = 0;
 
   (poolData || []).forEach(p => {
-    const lado = String(p.gallo || p.lado || '').toUpperCase();
+    const lado = String(p.gallo || p.lado || p.side || '').toUpperCase();
 
     if (lado === 'R' || lado === 'ROJO') {
-      totalRojo = Number(p.total || p.puntos || 0);
+      totalRojo += Number(p.total || p.puntos || p.puntos_total || 0);
     } else if (lado === 'V' || lado === 'VERDE') {
-      totalVerde = Number(p.total || p.puntos || 0);
+      totalVerde += Number(p.total || p.puntos || p.puntos_total || 0);
     }
   });
+
+  if (!totalRojo && !totalVerde && fight) {
+    totalRojo = Number(fight.puntos_rojo || 0);
+    totalVerde = Number(fight.puntos_verde || 0);
+  }
 
   const total = totalRojo + totalVerde;
   const pctRojo = total > 0 ? Math.round((totalRojo / total) * 100) : 50;
   const pctVerde = total > 0 ? 100 - pctRojo : 50;
 
-  document.getElementById('poolA').textContent = `${totalRojo} pts · ${pctRojo}%`;
-  document.getElementById('poolB').textContent = `${totalVerde} pts · ${pctVerde}%`;
+  poolA.textContent = `${totalRojo} pts · ${pctRojo}%`;
+  poolB.textContent = `${totalVerde} pts · ${pctVerde}%`;
 }
 
 /* ── Historial ─────────────────────────────────────────────────────────── */
 function renderHistorial(peleas) {
   const el = document.getElementById('historialList');
+  if (!el) return;
 
   if (!peleas.length) {
     el.innerHTML = '<p class="no-data">Sin peleas registradas en esta sala</p>';
@@ -306,14 +429,13 @@ function renderHistorial(peleas) {
           <th>#</th>
           <th>Rojo</th>
           <th>Verde</th>
-          <th>Estado</th>
           <th>Resultado</th>
         </tr>
       </thead>
       <tbody>
         ${peleas.map((p, i) => {
-          const rojo = p.nombre_equipo_rojo || p.gallo_rojo || 'Equipo Rojo';
-          const verde = p.nombre_equipo_verde || p.gallo_verde || 'Equipo Verde';
+          const rojo = p.nombre_equipo_rojo || 'Equipo Rojo';
+          const verde = p.nombre_equipo_verde || 'Equipo Verde';
 
           const resultado = p.resultado === 'rojo'
             ? `<span class="gallo-rojo">${escapeHtml(rojo)}</span>`
@@ -323,23 +445,11 @@ function renderHistorial(peleas) {
                 ? 'Tablas'
                 : '-';
 
-          const estadoClass = {
-            lista: 'estado-lista',
-            apostando: 'estado-apostando',
-            en_vivo: 'estado-en-vivo',
-            terminada: 'estado-terminada'
-          }[p.estado] || '';
-
           return `
             <tr>
               <td>${p.numero_pelea || (peleas.length - i)}</td>
               <td class="gallo-rojo">${escapeHtml(rojo)}</td>
               <td class="gallo-verde">${escapeHtml(verde)}</td>
-              <td>
-                <span class="estado-badge ${estadoClass}" style="font-size:.74rem;padding:4px 10px">
-                  ${escapeHtml(p.estado || '-')}
-                </span>
-              </td>
               <td>${resultado}</td>
             </tr>
           `;
@@ -352,28 +462,38 @@ function renderHistorial(peleas) {
 /* ── Apuestas ──────────────────────────────────────────────────────────── */
 function selectGallo(g) {
   selectedGallo = g;
-  document.getElementById('btnASelect').classList.toggle('selected', g === 'R');
-  document.getElementById('btnBSelect').classList.toggle('selected', g === 'V');
+
+  const btnASelect = document.getElementById('btnASelect');
+  const btnBSelect = document.getElementById('btnBSelect');
+
+  if (btnASelect) btnASelect.classList.toggle('selected', g === 'R');
+  if (btnBSelect) btnBSelect.classList.toggle('selected', g === 'V');
 }
 
 function setQuickAmount(amount) {
-  document.getElementById('betAmount').value = amount;
+  const betAmount = document.getElementById('betAmount');
+  if (betAmount) betAmount.value = amount;
 }
 
 async function placeBet() {
   if (!currentFight) return showBetMsg('No hay pelea activa', 'error');
+  if (!currentEvent) return showBetMsg('No hay evento activo', 'error');
   if (!selectedGallo) return showBetMsg('Selecciona rojo o verde', 'error');
 
-  const puntos = parseInt(document.getElementById('betAmount').value, 10);
+  const puntos = parseInt(document.getElementById('betAmount')?.value, 10);
   if (!puntos || puntos <= 0) return showBetMsg('Ingresa un monto válido', 'error');
 
-  const roomId = currentFight.room_id || currentFight.roomid || currentFight.roomId;
+  const roomState = await api(`/api/rooms/${encodeURIComponent(currentRoom)}`);
+  if (!roomState?.room?.id || !roomState?.activeEvent?.id || !roomState?.current?.id) {
+    return showBetMsg('No se pudo obtener el estado actual de la sala', 'error');
+  }
 
   const res = await api('/api/bets', {
     method: 'POST',
     body: JSON.stringify({
-      roomid: roomId,
-      peleaid: currentFight.id,
+      room_id: roomState.room.id,
+      event_id: roomState.activeEvent.id,
+      event_match_id: roomState.current.id,
       gallo: selectedGallo,
       puntos
     })
@@ -389,14 +509,25 @@ async function placeBet() {
 
   showBetMsg('Apuesta registrada' + unmatchedMsg, 'success');
   document.getElementById('betAmount').value = '';
-  refreshMe();
-  loadMyBets();
+
+  await refreshMe();
+  await loadMyBets();
+  await loadRoomState();
 }
 
 async function loadMyBets() {
   const bets = await api('/api/bets/my');
-  const activas = bets.filter(b => ['pendiente', 'matcheada'].includes(b.estado));
-  const hist = bets.filter(b => ['cerrada', 'terminada', 'pagada'].includes(b.estado) || b.resultado || b.ganador);
+  if (!Array.isArray(bets)) {
+    renderBetsTable('betsActivas', [], 'Sin apuestas activas');
+    renderBetsTable('betsHistorial', [], 'Sin historial de apuestas');
+    return;
+  }
+
+  const activas = bets.filter(b => ['pendiente', 'matcheada', 'matched'].includes(String(b.estado || '').toLowerCase()));
+  const hist = bets.filter(b =>
+    ['cerrada', 'terminada', 'pagada', 'settled'].includes(String(b.estado || '').toLowerCase()) ||
+    b.resultado
+  );
 
   renderBetsTable('betsActivas', activas, 'Sin apuestas activas');
   renderBetsTable('betsHistorial', hist, 'Sin historial de apuestas');
@@ -404,6 +535,7 @@ async function loadMyBets() {
 
 function renderBetsTable(elId, bets, emptyMsg) {
   const el = document.getElementById(elId);
+  if (!el) return;
 
   if (!bets.length) {
     el.innerHTML = `<p class="no-data">${emptyMsg}</p>`;
@@ -422,14 +554,14 @@ function renderBetsTable(elId, bets, emptyMsg) {
       </thead>
       <tbody>
         ${bets.map(b => {
-          const rojo = b.nombre_equipo_rojo || b.gallo_rojo || b.galloa || 'Equipo Rojo';
-          const verde = b.nombre_equipo_verde || b.gallo_verde || b.gallob || 'Equipo Verde';
+          const rojo = b.nombre_equipo_rojo || 'Equipo Rojo';
+          const verde = b.nombre_equipo_verde || 'Equipo Verde';
 
           const lado = String(b.gallo || '').toUpperCase();
           const ladoName = lado === 'R' ? rojo : lado === 'V' ? verde : '-';
           const ladoClass = lado === 'R' ? 'gallo-rojo' : lado === 'V' ? 'gallo-verde' : '';
 
-          const resultado = b.resultado || b.ganador || null;
+          const resultado = b.resultado || null;
           const ganoBadge = resultado
             ? (
                 (resultado === 'rojo' && lado === 'R') || (resultado === 'verde' && lado === 'V')
@@ -444,7 +576,7 @@ function renderBetsTable(elId, bets, emptyMsg) {
             <tr>
               <td style="font-size:.8rem">${escapeHtml(rojo)} vs ${escapeHtml(verde)}</td>
               <td class="${ladoClass}">${escapeHtml(ladoName)}</td>
-              <td>${Number(b.puntostotal || b.puntos || 0)}</td>
+              <td>${Number(b.puntos_total || 0)}</td>
               <td style="font-size:.8rem">${escapeHtml(b.estado || '-')} ${ganoBadge}</td>
             </tr>
           `;
@@ -456,10 +588,13 @@ function renderBetsTable(elId, bets, emptyMsg) {
 
 function switchBetsTab(tab, btn) {
   document.querySelectorAll('.bets-tab').forEach(t => t.classList.remove('active'));
-  btn.classList.add('active');
+  if (btn) btn.classList.add('active');
 
-  document.getElementById('betsActivas').style.display = tab === 'activas' ? 'block' : 'none';
-  document.getElementById('betsHistorial').style.display = tab === 'historial' ? 'block' : 'none';
+  const betsActivas = document.getElementById('betsActivas');
+  const betsHistorial = document.getElementById('betsHistorial');
+
+  if (betsActivas) betsActivas.style.display = tab === 'activas' ? 'block' : 'none';
+  if (betsHistorial) betsHistorial.style.display = tab === 'historial' ? 'block' : 'none';
 }
 
 /* ── Chat ──────────────────────────────────────────────────────────────── */
@@ -474,8 +609,8 @@ function appendChatMsg({ username, message, system }) {
     div.innerHTML = `<span class="chat-text">${escapeHtml(message)}</span>`;
   } else {
     div.innerHTML = `
-      <span class="chat-user">${escapeHtml(username)}:</span>
-      <span class="chat-text">${escapeHtml(message)}</span>
+      <span class="chat-user">${escapeHtml(username || 'Usuario')}:</span>
+      <span class="chat-text">${escapeHtml(message || '')}</span>
     `;
   }
 
@@ -501,31 +636,42 @@ function sendChat() {
 
 /* ── Retiros ───────────────────────────────────────────────────────────── */
 function abrirRetiro() {
-  document.getElementById('retiroMsg').textContent = '';
-  document.getElementById('retiroAmount').value = '';
-  document.getElementById('retiroDestino').value = '';
-  document.getElementById('modalRetiro').classList.add('open');
+  const retiroMsg = document.getElementById('retiroMsg');
+  const retiroAmount = document.getElementById('retiroAmount');
+  const retiroDestino = document.getElementById('retiroDestino');
+  const modalRetiro = document.getElementById('modalRetiro');
+
+  if (retiroMsg) retiroMsg.textContent = '';
+  if (retiroAmount) retiroAmount.value = '';
+  if (retiroDestino) retiroDestino.value = '';
+  if (modalRetiro) modalRetiro.classList.add('open');
+
   loadMisRetiros();
 }
 
 function cerrarRetiro() {
-  document.getElementById('modalRetiro').classList.remove('open');
+  const modalRetiro = document.getElementById('modalRetiro');
+  if (modalRetiro) modalRetiro.classList.remove('open');
 }
 
 async function solicitarRetiro() {
-  const amount = parseInt(document.getElementById('retiroAmount').value, 10);
-  const destination = document.getElementById('retiroDestino').value.trim();
+  const amount = parseInt(document.getElementById('retiroAmount')?.value, 10);
+  const destination = document.getElementById('retiroDestino')?.value.trim();
   const el = document.getElementById('retiroMsg');
 
   if (!amount || amount <= 0) {
-    el.textContent = 'Ingresa un monto válido';
-    el.className = 'bet-msg error';
+    if (el) {
+      el.textContent = 'Ingresa un monto válido';
+      el.className = 'bet-msg error';
+    }
     return;
   }
 
   if (!destination) {
-    el.textContent = 'Ingresa el destino';
-    el.className = 'bet-msg error';
+    if (el) {
+      el.textContent = 'Ingresa el destino';
+      el.className = 'bet-msg error';
+    }
     return;
   }
 
@@ -535,26 +681,31 @@ async function solicitarRetiro() {
   });
 
   if (!res.ok) {
-    el.textContent = res.error || 'No se pudo enviar la solicitud';
-    el.className = 'bet-msg error';
+    if (el) {
+      el.textContent = res.error || 'No se pudo enviar la solicitud';
+      el.className = 'bet-msg error';
+    }
     return;
   }
 
-  el.textContent = 'Solicitud enviada. El administrador la procesará pronto.';
-  el.className = 'bet-msg success';
+  if (el) {
+    el.textContent = 'Solicitud enviada. El administrador la procesará pronto.';
+    el.className = 'bet-msg success';
+  }
 
   document.getElementById('retiroAmount').value = '';
   document.getElementById('retiroDestino').value = '';
 
-  refreshMe();
-  loadMisRetiros();
+  await refreshMe();
+  await loadMisRetiros();
 }
 
 async function loadMisRetiros() {
   const list = await api('/api/withdrawals/my');
   const el = document.getElementById('misRetirosList');
+  if (!el) return;
 
-  if (!list.length) {
+  if (!Array.isArray(list) || !list.length) {
     el.innerHTML = '<p class="no-data">Sin solicitudes anteriores</p>';
     return;
   }
@@ -571,12 +722,14 @@ async function loadMisRetiros() {
       </thead>
       <tbody>
         ${list.map(w => {
-          const fecha = new Date(w.createdat).toLocaleDateString('es-MX', {
-            day: '2-digit',
-            month: 'short',
-            hour: '2-digit',
-            minute: '2-digit'
-          });
+          const fechaRaw = w.created_at || w.updated_at;
+          const fecha = fechaRaw
+            ? new Date(fechaRaw).toLocaleDateString('es-MX', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric'
+              })
+            : '-';
 
           const estadoColor = {
             pending: '#f39c18',
@@ -587,9 +740,9 @@ async function loadMisRetiros() {
 
           return `
             <tr>
-              <td><strong>${w.amount}</strong></td>
+              <td><strong>${Number(w.amount || 0)}</strong></td>
               <td style="max-width:120px;word-break:break-all;font-size:.8rem">${escapeHtml(w.destination || '-')}</td>
-              <td><span style="color:${estadoColor};font-weight:600">${escapeHtml(w.status)}</span></td>
+              <td><span style="color:${estadoColor};font-weight:600">${escapeHtml(w.status || '-')}</span></td>
               <td style="font-size:.8rem;color:var(--muted)">${fecha}</td>
             </tr>
           `;
@@ -602,6 +755,8 @@ async function loadMisRetiros() {
 /* ── Helpers ───────────────────────────────────────────────────────────── */
 function showBetMsg(msg, type) {
   const el = document.getElementById('betMsg');
+  if (!el) return;
+
   el.textContent = msg;
   el.className = 'bet-msg ' + type;
 
@@ -625,7 +780,7 @@ function logout() {
 }
 
 function escapeHtml(str) {
-  return String(str)
+  return String(str ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -634,5 +789,5 @@ function escapeHtml(str) {
 }
 
 function escapeAttr(str) {
-  return String(str).replace(/'/g, "\\'");
+  return String(str ?? '').replace(/'/g, "\\'");
 }
