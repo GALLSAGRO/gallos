@@ -270,7 +270,7 @@ router.post('/:id/close-betting', async (req, res) => {
   try {
     const id = Number(req.params.id);
 
-    const q = await db.query(
+    const q = await pool.query(
       `UPDATE event_matches
        SET estado = 'en_vivo'
        WHERE id = $1
