@@ -188,46 +188,44 @@ async function processMatchingBet({ roomId, eventMatchId, eventId, userId, gallo
       matchedTotal += matched;
     }
 
-    // Devolver parte no matcheada
-    if (remaining > 0) {
-      await client.query(
-        `UPDATE usuarios
-         SET puntos = puntos + $1
-         WHERE id = $2`,
-        [remaining, userId]
-      );
-    }
-
-    // Ajustar apuesta recién creada a lo realmente cruzado
-    // Ajustar apuesta recién creada a lo realmente cruzado
-    if (matchedTotal > 0) {
+    // Ajustar apuesta según resultado del cruce
+    if (matchedTotal > 0 && remaining > 0) {
+      // Cruce parcial — queda pendiente con lo no cruzado en cola
       await client.query(
         `UPDATE apuestas
-         SET puntos_total  = $2,
+         SET puntos_total   = $2,
+             puntos_matched = $3,
+             estado         = 'pendiente'
+         WHERE id = $1`,
+        [bet.id, puntos, matchedTotal]
+      );
+    } else if (matchedTotal > 0 && remaining === 0) {
+      // Cruce total
+      await client.query(
+        `UPDATE apuestas
+         SET puntos_total   = $2,
              puntos_matched = $2,
-             estado = 'matcheada'
+             estado         = 'matcheada'
          WHERE id = $1`,
         [bet.id, matchedTotal]
       );
     } else {
-      //No hubo match — eliminar el registro, el saldo ya fue devuelto arriba
+      // Sin cruce — queda pendiente esperando contraparte
       await client.query(
-        `DELETE FROM apuestas WHERE id = $1`,
+        `UPDATE apuestas
+         SET estado = 'pendiente'
+         WHERE id  = $1`,
         [bet.id]
       );
     }
 
     const updatedBetQ = await client.query(
-      `SELECT *
-       FROM apuestas
-       WHERE id = $1`,
+      `SELECT * FROM apuestas WHERE id = $1`,
       [bet.id]
     );
 
     const balanceQ = await client.query(
-      `SELECT puntos
-       FROM usuarios
-       WHERE id = $1`,
+      `SELECT puntos FROM usuarios WHERE id = $1`,
       [userId]
     );
 
@@ -248,7 +246,6 @@ async function processMatchingBet({ roomId, eventMatchId, eventId, userId, gallo
     client.release();
   }
 }
-
 // -------------------------------------------------------
 // POST /api/bets
 // -------------------------------------------------------
