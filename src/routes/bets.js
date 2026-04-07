@@ -199,22 +199,20 @@ async function processMatchingBet({ roomId, eventMatchId, eventId, userId, gallo
     }
 
     // Ajustar apuesta recién creada a lo realmente cruzado
+    // Ajustar apuesta recién creada a lo realmente cruzado
     if (matchedTotal > 0) {
       await client.query(
         `UPDATE apuestas
-         SET puntos_total = $2,
+         SET puntos_total  = $2,
              puntos_matched = $2,
              estado = 'matcheada'
          WHERE id = $1`,
         [bet.id, matchedTotal]
       );
     } else {
+      //No hubo match — eliminar el registro, el saldo ya fue devuelto arriba
       await client.query(
-        `UPDATE apuestas
-         SET puntos_total = 0,
-             puntos_matched = 0,
-             estado = 'cancelada'
-         WHERE id = $1`,
+        `DELETE FROM apuestas WHERE id = $1`,
         [bet.id]
       );
     }
